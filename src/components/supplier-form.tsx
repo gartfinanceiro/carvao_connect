@@ -316,7 +316,9 @@ export function SupplierForm({
                   onValueChange={(v) => updateField("state", v ?? "")}
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecione a UF" />
+                    <SelectValue placeholder="Selecione a UF">
+                      {(value: string) => value || "Selecione a UF"}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {UF_OPTIONS.map((uf) => (
@@ -343,7 +345,9 @@ export function SupplierForm({
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue>
+                      {(value: string) => charcoalTypeLabels[value as CharcoalType] ?? value}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
                     {(

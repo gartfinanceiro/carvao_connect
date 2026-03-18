@@ -31,11 +31,30 @@ export function SupplierFilters({
   onStatusChange,
   onUfChange,
 }: SupplierFiltersProps) {
+  const charcoalTypeValueLabel: Record<string, string> = {
+    all: "Todos os tipos",
+    ...charcoalTypeLabels,
+  }
+  const docStatusValueLabel: Record<string, string> = {
+    all: "Todos os docs",
+    ...docStatusLabels,
+  }
+  const statusValueLabel: Record<string, string> = {
+    all: "Todos",
+    ...supplierStatusLabels,
+  }
+  const ufValueLabel: Record<string, string> = {
+    all: "Todas UFs",
+    ...Object.fromEntries(UF_OPTIONS.map((u) => [u, u])),
+  }
+
   return (
     <div className="flex flex-wrap gap-3">
       <Select value={charcoalType} onValueChange={(v) => onCharcoalTypeChange(v ?? "all")}>
         <SelectTrigger className="w-[160px]">
-          <SelectValue placeholder="Tipo de carvão" />
+          <SelectValue placeholder="Tipo de carvão">
+            {(value: string) => charcoalTypeValueLabel[value] ?? value}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos os tipos</SelectItem>
@@ -51,7 +70,9 @@ export function SupplierFilters({
 
       <Select value={docStatus} onValueChange={(v) => onDocStatusChange(v ?? "all")}>
         <SelectTrigger className="w-[160px]">
-          <SelectValue placeholder="Status docs" />
+          <SelectValue placeholder="Status docs">
+            {(value: string) => docStatusValueLabel[value] ?? value}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos os docs</SelectItem>
@@ -67,7 +88,9 @@ export function SupplierFilters({
 
       <Select value={status} onValueChange={(v) => onStatusChange(v ?? "all")}>
         <SelectTrigger className="w-[160px]">
-          <SelectValue placeholder="Status" />
+          <SelectValue placeholder="Status">
+            {(value: string) => statusValueLabel[value] ?? value}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todos</SelectItem>
@@ -83,7 +106,9 @@ export function SupplierFilters({
 
       <Select value={uf} onValueChange={(v) => onUfChange(v ?? "all")}>
         <SelectTrigger className="w-[120px]">
-          <SelectValue placeholder="UF" />
+          <SelectValue placeholder="UF">
+            {(value: string) => ufValueLabel[value] ?? value}
+          </SelectValue>
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">Todas UFs</SelectItem>
