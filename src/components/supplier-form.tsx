@@ -1,0 +1,510 @@
+"use client"
+
+import { useState } from "react"
+import { createClient } from "@/lib/supabase/client"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
+import { Badge } from "@/components/ui/badge"
+import { Loader2, Plus, X } from "lucide-react"
+import { toast } from "sonner"
+import { charcoalTypeLabels, UF_OPTIONS } from "@/lib/labels"
+import { validateDocument, validatePhone } from "@/lib/utils"
+import type { Supplier, CharcoalType } from "@/types/database"
+
+interface SupplierFormProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  supplier?: Supplier | null
+  onSuccess: () => void
+}
+
+interface FormData {
+  name: string
+  document: string
+  phones: string[]
+  city: string
+  state: string
+  charcoal_type: CharcoalType
+  avg_density: string
+  monthly_capacity: string
+  contracted_loads: string
+  last_price: string
+  dap_expiry: string
+  gf_expiry: string
+  notes: string
+}
+
+function getInitialFormData(supplier?: Supplier | null): FormData {
+  return {
+    name: supplier?.name ?? "",
+    document: supplier?.document ?? "",
+    phones: supplier?.phones?.length ? supplier.phones : [""],
+    city: supplier?.city ?? "",
+    state: supplier?.state ?? "",
+    charcoal_type: supplier?.charcoal_type ?? "eucalipto",
+    avg_density: supplier?.avg_density?.toString() ?? "",
+    monthly_capacity: supplier?.monthly_capacity?.toString() ?? "",
+    contracted_loads: supplier?.contracted_loads?.toString() ?? "0",
+    last_price: supplier?.last_price?.toString() ?? "",
+    dap_expiry: supplier?.dap_expiry ?? "",
+    gf_expiry: supplier?.gf_expiry ?? "",
+    notes: supplier?.notes ?? "",
+  }
+}
+
+export function SupplierForm({
+  open,
+  onOpenChange,
+  supplier,
+  onSuccess,
+}: SupplierFormProps) {
+  const isEdit = !!supplier
+  const [form, setForm] = useState<FormData>(getInitialFormData(supplier))
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
+  const [loading, setLoading] = useState(false)
+
+  // Reset form when dialog opens with new data
+  function handleOpenChange(open: boolean) {
+    if (open) {
+      setForm(getInitialFormData(supplier))
+      setErrors({})
+    }
+    onOpenChange(open)
+  }
+
+  function updateField<K extends keyof FormData>(key: K, value: FormData[K]) {
+    setForm((prev) => ({ ...prev, [key]: value }))
+    setErrors((prev) => ({ ...prev, [key]: undefined }))
+  }
+
+  function addPhone() {
+    setForm((prev) => ({ ...prev, phones: [...prev.phones, ""] }))
+  }
+
+  function updatePhone(index: number, value: string) {
+    setForm((prev) => ({
+      ...prev,
+      phones: prev.phones.map((p, i) => (i === index ? value : p)),
+    }))
+  }
+
+  function removePhone(index: number) {
+    if (form.phones.length <= 1) return
+    setForm((prev) => ({
+      ...prev,
+      phones: prev.phones.filter((_, i) => i !== index),
+    }))
+  }
+
+  function validate(): boolean {
+    const newErrors: Partial<Record<keyof FormData, string>> = {}
+
+    if (!form.name.trim()) newErrors.name = "Nome é obrigatório"
+    if (!form.document.trim()) {
+      newErrors.document = "CPF/CNPJ é obrigatório"
+    } else if (!validateDocument(form.document)) {
+      newErrors.document = "CPF (11 dígitos) ou CNPJ (14 dígitos)"
+    }
+
+    const validPhones = form.phones.filter((p) => p.trim())
+    if (validPhones.length === 0) {
+      newErrors.phones = "Pelo menos um telefone é obrigatório"
+    } else {
+      for (const phone of validPhones) {
+        if (!validatePhone(phone)) {
+          newErrors.phones = "Telefone deve ter pelo menos 10 dígitos"
+          break
+        }
+      }
+    }
+
+    if (!form.city.trim()) newErrors.city = "Cidade é obrigatória"
+    if (!form.state) newErrors.state = "UF é obrigatória"
+
+    if (!form.avg_density) {
+      newErrors.avg_density = "Densidade é obrigatória"
+    } else {
+      const density = Number(form.avg_density)
+      if (density < 100 || density > 400)
+        newErrors.avg_density = "Entre 100 e 400 kg/mdc"
+    }
+
+    if (!form.monthly_capacity) {
+      newErrors.monthly_capacity = "Capacidade é obrigatória"
+    } else if (Number(form.monthly_capacity) < 1) {
+      newErrors.monthly_capacity = "Mínimo 1 carga"
+    }
+
+    setErrors(newErrors)
+    return Object.keys(newErrors).length === 0
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!validate()) return
+
+    setLoading(true)
+    const supabase = createClient()
+
+    const phones = form.phones.filter((p) => p.trim())
+
+    const payload = {
+      name: form.name.trim(),
+      document: form.document.replace(/\D/g, ""),
+      phones,
+      city: form.city.trim(),
+      state: form.state,
+      charcoal_type: form.charcoal_type,
+      avg_density: Number(form.avg_density),
+      monthly_capacity: Number(form.monthly_capacity),
+      contracted_loads: Number(form.contracted_loads) || 0,
+      last_price: form.last_price ? Number(form.last_price) : null,
+      dap_expiry: form.dap_expiry || null,
+      gf_expiry: form.gf_expiry || null,
+      notes: form.notes.trim() || null,
+    }
+
+    if (isEdit && supplier) {
+      const { error } = await supabase
+        .from("suppliers")
+        .update(payload)
+        .eq("id", supplier.id)
+
+      if (error) {
+        toast.error("Erro ao atualizar fornecedor.")
+        setLoading(false)
+        return
+      }
+      toast.success("Fornecedor atualizado com sucesso!")
+    } else {
+      const { error } = await supabase.from("suppliers").insert(payload)
+
+      if (error) {
+        toast.error("Erro ao criar fornecedor.")
+        setLoading(false)
+        return
+      }
+      toast.success("Fornecedor criado com sucesso!")
+    }
+
+    setLoading(false)
+    onOpenChange(false)
+    onSuccess()
+  }
+
+  // Compute doc_status preview
+  function getDocStatusPreview(): string {
+    if (!form.dap_expiry && !form.gf_expiry) return "pendente"
+    const now = new Date()
+    const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+    const dap = form.dap_expiry ? new Date(form.dap_expiry) : null
+    const gf = form.gf_expiry ? new Date(form.gf_expiry) : null
+
+    if ((dap && dap < now) || (gf && gf < now)) return "irregular"
+    if ((dap && dap < in30Days) || (gf && gf < in30Days)) return "pendente"
+    return "regular"
+  }
+
+  const docPreview = getDocStatusPreview()
+
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>
+            {isEdit ? "Editar fornecedor" : "Novo fornecedor"}
+          </DialogTitle>
+        </DialogHeader>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Column 1 */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="name">Nome / Razão Social *</Label>
+                <Input
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => updateField("name", e.target.value)}
+                  placeholder="Nome do fornecedor"
+                />
+                {errors.name && (
+                  <p className="text-xs text-destructive">{errors.name}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="document">CPF / CNPJ *</Label>
+                <Input
+                  id="document"
+                  value={form.document}
+                  onChange={(e) => updateField("document", e.target.value)}
+                  placeholder="Apenas números"
+                />
+                {errors.document && (
+                  <p className="text-xs text-destructive">{errors.document}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Telefone(s) *</Label>
+                {form.phones.map((phone, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      value={phone}
+                      onChange={(e) => updatePhone(i, e.target.value)}
+                      placeholder="(31) 99999-9999"
+                    />
+                    {form.phones.length > 1 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removePhone(i)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={addPhone}
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  Adicionar telefone
+                </Button>
+                {errors.phones && (
+                  <p className="text-xs text-destructive">{errors.phones}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="city">Cidade *</Label>
+                <Input
+                  id="city"
+                  value={form.city}
+                  onChange={(e) => updateField("city", e.target.value)}
+                  placeholder="Ex: Sete Lagoas"
+                />
+                {errors.city && (
+                  <p className="text-xs text-destructive">{errors.city}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>UF *</Label>
+                <Select
+                  value={form.state}
+                  onValueChange={(v) => updateField("state", v ?? "")}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione a UF" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {UF_OPTIONS.map((uf) => (
+                      <SelectItem key={uf} value={uf}>
+                        {uf}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {errors.state && (
+                  <p className="text-xs text-destructive">{errors.state}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Column 2 */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Tipo de carvão *</Label>
+                <Select
+                  value={form.charcoal_type}
+                  onValueChange={(v) =>
+                    updateField("charcoal_type", (v ?? "eucalipto") as CharcoalType)
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(
+                      Object.entries(charcoalTypeLabels) as [
+                        CharcoalType,
+                        string,
+                      ][]
+                    ).map(([key, label]) => (
+                      <SelectItem key={key} value={key}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="avg_density">Densidade média (kg/mdc) *</Label>
+                <Input
+                  id="avg_density"
+                  type="number"
+                  value={form.avg_density}
+                  onChange={(e) => updateField("avg_density", e.target.value)}
+                  placeholder="ex: 220"
+                  min={100}
+                  max={400}
+                />
+                {errors.avg_density && (
+                  <p className="text-xs text-destructive">
+                    {errors.avg_density}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="monthly_capacity">
+                  Capacidade mensal (cargas) *
+                </Label>
+                <Input
+                  id="monthly_capacity"
+                  type="number"
+                  value={form.monthly_capacity}
+                  onChange={(e) =>
+                    updateField("monthly_capacity", e.target.value)
+                  }
+                  placeholder="ex: 6"
+                  min={1}
+                />
+                {errors.monthly_capacity && (
+                  <p className="text-xs text-destructive">
+                    {errors.monthly_capacity}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="contracted_loads">Cargas contratadas</Label>
+                <Input
+                  id="contracted_loads"
+                  type="number"
+                  value={form.contracted_loads}
+                  onChange={(e) =>
+                    updateField("contracted_loads", e.target.value)
+                  }
+                  min={0}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="last_price">Preço última compra (R$/mdc)</Label>
+                <Input
+                  id="last_price"
+                  type="number"
+                  value={form.last_price}
+                  onChange={(e) => updateField("last_price", e.target.value)}
+                  placeholder="ex: 85.00"
+                  step="0.01"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Documentation section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+              Documentação
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+              <div className="space-y-2">
+                <Label htmlFor="dap_expiry">Validade DAP</Label>
+                <Input
+                  id="dap_expiry"
+                  type="date"
+                  value={form.dap_expiry}
+                  onChange={(e) => updateField("dap_expiry", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="gf_expiry">Validade GF</Label>
+                <Input
+                  id="gf_expiry"
+                  type="date"
+                  value={form.gf_expiry}
+                  onChange={(e) => updateField("gf_expiry", e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Status documental</Label>
+                <div>
+                  {docPreview === "regular" && (
+                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
+                      Regular
+                    </Badge>
+                  )}
+                  {docPreview === "pendente" && (
+                    <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
+                      Pendente
+                    </Badge>
+                  )}
+                  {docPreview === "irregular" && (
+                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
+                      Irregular
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-2">
+            <Label htmlFor="notes">Observações</Label>
+            <Textarea
+              id="notes"
+              value={form.notes}
+              onChange={(e) => updateField("notes", e.target.value)}
+              placeholder="Observações gerais sobre o fornecedor..."
+              rows={3}
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+              disabled={loading}
+            >
+              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isEdit ? "Salvar alterações" : "Salvar fornecedor"}
+            </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
