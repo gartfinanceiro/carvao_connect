@@ -61,7 +61,7 @@ export function AppHeader({ userName, userEmail }: AppHeaderProps) {
 
       {/* User profile */}
       <DropdownMenu>
-        <DropdownMenuTrigger className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-muted transition-colors">
+        <DropdownMenuTrigger suppressHydrationWarning className="flex items-center gap-3 rounded-lg px-2 py-1.5 hover:bg-muted transition-colors">
           <div className="h-8 w-8 rounded-full bg-[#E8F5E9] flex items-center justify-center">
             <span className="text-xs font-semibold text-[#1B4332]">
               {userName.charAt(0).toUpperCase()}

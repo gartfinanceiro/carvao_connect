@@ -7,9 +7,13 @@ import { toast } from "sonner"
 import { AlertCard, type AlertWithSupplier } from "@/components/alert-card"
 import { AiSuggestionCard, type SuggestionWithSupplier } from "@/components/ai-suggestion-card"
 import { InteractionForm } from "@/components/interaction-form"
+import { SupplierForm } from "@/components/supplier-form"
+import { QuickInteraction } from "@/components/quick-interaction"
 import { DischargeForm } from "@/components/discharge-form"
 import { EmptyState } from "@/components/empty-state"
-import { MessageSquare } from "lucide-react"
+import { ActivityFeed } from "@/components/activity-feed"
+import { QueueForm } from "@/components/queue-form"
+import { MessageSquare, UserPlus, Phone, CalendarClock, Truck } from "lucide-react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import type { ContactType, ContactResult, NextStepType } from "@/types/database"
@@ -45,6 +49,12 @@ export function Feed({ userName }: FeedProps) {
   const [dischargeOpen, setDischargeOpen] = useState(false)
   const [dischargeSupplierId, setDischargeSupplierId] = useState<string | undefined>()
   const [dischargeInteractionId, setDischargeInteractionId] = useState<string | undefined>()
+
+  // Quick action dialogs
+  const [supplierFormOpen, setSupplierFormOpen] = useState(false)
+  const [quickInteractionOpen, setQuickInteractionOpen] = useState(false)
+  const [quickDischargeOpen, setQuickDischargeOpen] = useState(false)
+  const [quickQueueOpen, setQuickQueueOpen] = useState(false)
 
   // AI Suggestions
   const [suggestions, setSuggestions] = useState<SuggestionWithSupplier[]>([])
@@ -83,12 +93,12 @@ export function Feed({ userName }: FeedProps) {
     const [pendingResult, doneResult, loadsResult, dischargesWeekResult, suggestionsResult] = await Promise.all([
       supabase
         .from("alerts")
-        .select("*, supplier:suppliers (id, name, charcoal_type, phones)")
+        .select("*, supplier:suppliers (id, name, phones)")
         .in("status", ["pendente"])
         .order("due_at", { ascending: true }),
       supabase
         .from("alerts")
-        .select("*, supplier:suppliers (id, name, charcoal_type, phones)")
+        .select("*, supplier:suppliers (id, name, phones)")
         .eq("status", "concluido")
         .gte("updated_at", todayStart.toISOString())
         .order("updated_at", { ascending: false })
@@ -106,7 +116,7 @@ export function Feed({ userName }: FeedProps) {
         .lte("discharge_date", todayDateStr),
       supabase
         .from("ai_suggestions")
-        .select("*, supplier:suppliers (id, name, charcoal_type), conversation:whatsapp_conversations (id, phone)")
+        .select("*, supplier:suppliers (id, name), conversation:whatsapp_conversations (id, phone)")
         .eq("status", "pending")
         .order("created_at", { ascending: false }),
     ])
@@ -266,9 +276,28 @@ export function Feed({ userName }: FeedProps) {
   const firstName = userName.split(" ")[0]
   const hasAnyAlerts = overdue.length > 0 || todayAlerts.length > 0 || upcoming.length > 0
 
+  // Active tab for alerts
+  const [activeTab, setActiveTab] = useState<"overdue" | "today" | "upcoming" | "done">("overdue")
+
+  // Auto-select first non-empty tab
+  useEffect(() => {
+    if (!loading) {
+      if (overdue.length > 0) setActiveTab("overdue")
+      else if (todayAlerts.length > 0) setActiveTab("today")
+      else if (upcoming.length > 0) setActiveTab("upcoming")
+      else if (doneToday.length > 0) setActiveTab("done")
+    }
+  }, [loading, overdue, todayAlerts, upcoming, doneToday])
+
+  const activeAlerts = 
+    activeTab === "overdue" ? overdue :
+    activeTab === "today" ? todayAlerts :
+    activeTab === "upcoming" ? upcoming :
+    doneToday
+
   if (loading) {
     return (
-      <div className="px-6 md:px-8 py-8 max-w-[1100px] space-y-6">
+      <div className="px-6 md:px-8 py-8 max-w-[1400px] space-y-6">
         <div className="space-y-2">
           <div className="h-8 w-64 bg-muted rounded-lg animate-pulse" />
           <div className="h-5 w-40 bg-muted rounded-lg animate-pulse" />
@@ -278,17 +307,16 @@ export function Feed({ userName }: FeedProps) {
             <div key={i} className="h-24 bg-muted rounded-2xl animate-pulse" />
           ))}
         </div>
-        <div className="space-y-3">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="h-20 bg-muted rounded-2xl animate-pulse" />
-          ))}
+        <div className="grid lg:grid-cols-2 gap-6">
+          <div className="h-64 bg-muted rounded-2xl animate-pulse" />
+          <div className="h-64 bg-muted rounded-2xl animate-pulse" />
         </div>
       </div>
     )
   }
 
   return (
-    <div className="px-6 md:px-8 py-8 max-w-[1100px]">
+    <div className="px-6 md:px-8 py-8 max-w-[1400px]">
       {/* Greeting */}
       <div className="mb-8">
         <h1 className="text-[28px] font-extrabold tracking-tight text-foreground">
@@ -297,8 +325,41 @@ export function Feed({ userName }: FeedProps) {
         <p className="text-[14px] text-muted-foreground mt-1">{todayDate}</p>
       </div>
 
+      {/* Quick Actions Bar */}
+      <div className="flex items-center gap-2 mb-6 mt-6 flex-wrap">
+        <button
+          onClick={() => setQuickInteractionOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1B4332] text-white text-[13px] font-semibold hover:bg-[#2D6A4F] active:scale-[0.97] transition-all duration-150"
+        >
+          <Phone className="h-4 w-4" />
+          Registrar interação
+        </button>
+        <button
+          onClick={() => setQuickQueueOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-[#E5E5E5] text-[#111] text-[13px] font-semibold hover:bg-[#F7F7F7] hover:border-[#999] active:scale-[0.97] transition-all duration-150"
+        >
+          <CalendarClock className="h-4 w-4" />
+          Agendar fornecedor
+        </button>
+        <button
+          onClick={() => setQuickDischargeOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-[#E5E5E5] text-[#111] text-[13px] font-semibold hover:bg-[#F7F7F7] hover:border-[#999] active:scale-[0.97] transition-all duration-150"
+        >
+          <Truck className="h-4 w-4" />
+          Registrar descarga
+        </button>
+        <button
+          onClick={() => setSupplierFormOpen(true)}
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-[#E5E5E5] text-[#111] text-[13px] font-semibold hover:bg-[#F7F7F7] hover:border-[#999] active:scale-[0.97] transition-all duration-150"
+        >
+          <UserPlus className="h-4 w-4" />
+          Novo fornecedor
+        </button>
+      </div>
+
+
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {[
           { label: "Atrasados", value: overdue.length, color: overdue.length > 0 ? "text-red-600" : "text-foreground" },
           { label: "Hoje", value: todayAlerts.length, color: todayAlerts.length > 0 ? "text-amber-600" : "text-foreground" },
@@ -314,142 +375,154 @@ export function Feed({ userName }: FeedProps) {
         ))}
       </div>
 
-      {/* WhatsApp Suggestions */}
-      {suggestions.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-center gap-2.5 mb-3">
-            <MessageSquare className="h-4 w-4 text-emerald-600" />
-            <h2 className="text-[16px] font-bold text-foreground">Sugestões do WhatsApp</h2>
-            <span className="bg-emerald-500 text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
-              {suggestions.length}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-border bg-white overflow-hidden divide-y divide-border" style={{ boxShadow: "var(--shadow-card)" }}>
-            {suggestions.map((s) => (
-              <AiSuggestionCard
-                key={s.id}
-                suggestion={s}
-                onConfirm={handleSuggestionConfirm}
-                onEdit={handleSuggestionEdit}
-                onDismiss={handleSuggestionDismiss}
-              />
+      {/* Two Column Layout */}
+      <div className="grid lg:grid-cols-[1fr_1fr] gap-6">
+
+        {/* LEFT: Actions with tabs */}
+        <div>
+          <h2 className="text-[16px] font-bold text-foreground mb-4">Ações pendentes</h2>
+
+          {/* Tab buttons */}
+          <div className="flex gap-2 mb-4">
+            {([
+              { key: "overdue" as const, label: "Atrasados", count: overdue.length, color: "bg-red-500" },
+              { key: "today" as const, label: "Hoje", count: todayAlerts.length, color: "bg-amber-500" },
+              { key: "upcoming" as const, label: "Próximos", count: upcoming.length, color: "bg-[#999]" },
+              { key: "done" as const, label: "Concluídos", count: doneToday.length, color: "bg-emerald-500" },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-[13px] font-semibold transition-all duration-150 ${
+                  activeTab === tab.key
+                    ? "bg-[#1B4332] text-white"
+                    : "bg-white border border-[#E5E5E5] text-[#737373] hover:text-[#111] hover:border-[#999]"
+                }`}
+              >
+                {tab.label}
+                {tab.count > 0 && (
+                  <span className={`text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 ${
+                    activeTab === tab.key
+                      ? "bg-white/20 text-white"
+                      : `${tab.color} text-white`
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
             ))}
           </div>
-        </section>
-      )}
 
-      {/* Alerts */}
-      {!hasAnyAlerts && doneToday.length === 0 && suggestions.length === 0 && (
-        <EmptyState
-          icon="🎉"
-          title="Nenhuma ação pendente"
-          description="Ótimo trabalho! Não há alertas pendentes no momento."
-          actionLabel="Ver fornecedores"
-          actionHref="/fornecedores"
-        />
-      )}
-
-      {overdue.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-center gap-2.5 mb-3">
-            <h2 className="text-[16px] font-bold text-foreground">Ações atrasadas</h2>
-            <span className="bg-red-500 text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
-              {overdue.length}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-border bg-white overflow-hidden" style={{ boxShadow: "var(--shadow-card)" }}>
-            {overdue.map((alert, i) => (
-              <AlertCard key={alert.id} alert={alert} section="overdue" onContact={handleContact} onSnooze={handleSnooze} onDismiss={handleDismiss} onRegisterDischarge={handleRegisterDischarge} isLast={i === overdue.length - 1} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {todayAlerts.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-center gap-2.5 mb-3">
-            <h2 className="text-[16px] font-bold text-foreground">Hoje</h2>
-            <span className="bg-amber-500 text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
-              {todayAlerts.length}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-border bg-white overflow-hidden" style={{ boxShadow: "var(--shadow-card)" }}>
-            {todayAlerts.map((alert, i) => (
-              <AlertCard key={alert.id} alert={alert} section="today" onContact={handleContact} onSnooze={handleSnooze} onDismiss={handleDismiss} onRegisterDischarge={handleRegisterDischarge} isLast={i === todayAlerts.length - 1} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {upcoming.length > 0 && (
-        <section className="mb-8">
-          <div className="flex items-center gap-2.5 mb-3">
-            <h2 className="text-[16px] font-bold text-foreground">Próximos</h2>
-            <span className="bg-muted-foreground/30 text-foreground text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
-              {upcoming.length}
-            </span>
-          </div>
-          <div className="rounded-2xl border border-border bg-white overflow-hidden" style={{ boxShadow: "var(--shadow-card)" }}>
-            {upcoming.map((alert, i) => (
-              <AlertCard key={alert.id} alert={alert} section="upcoming" onContact={handleContact} onSnooze={handleSnooze} onDismiss={handleDismiss} onRegisterDischarge={handleRegisterDischarge} isLast={i === upcoming.length - 1} />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {doneToday.length > 0 && (
-        <section className="mb-8">
-          <button onClick={() => setDoneExpanded(!doneExpanded)} className="flex items-center gap-2.5 mb-3">
-            {doneExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-            <h2 className="text-[16px] font-bold text-foreground">Concluídos</h2>
-            <span className="bg-emerald-500 text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
-              {doneToday.length}
-            </span>
-          </button>
-          {doneExpanded && (
-            <div className="rounded-2xl border border-border bg-white overflow-hidden" style={{ boxShadow: "var(--shadow-card)" }}>
-              {doneToday.map((alert, i) => (
-                <AlertCard key={alert.id} alert={alert} section="done" onContact={handleContact} onSnooze={handleSnooze} onDismiss={handleDismiss} onRegisterDischarge={handleRegisterDischarge} isLast={i === doneToday.length - 1} />
+          {/* Alert list */}
+          {activeAlerts.length === 0 ? (
+            <div className="rounded-2xl border border-[#E5E5E5] bg-white p-8 text-center" style={{ boxShadow: "var(--shadow-card)" }}>
+              <p className="text-[14px] text-[#999]">
+                {activeTab === "done" ? "Nenhuma ação concluída hoje." : "Nenhuma ação pendente nesta categoria."}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#E5E5E5] bg-white overflow-hidden max-h-[600px] overflow-y-auto" style={{ boxShadow: "var(--shadow-card)" }}>
+              {activeAlerts.map((alert, i) => (
+                <AlertCard
+                  key={alert.id}
+                  alert={alert}
+                  section={activeTab}
+                  onContact={handleContact}
+                  onSnooze={handleSnooze}
+                  onDismiss={handleDismiss}
+                  onRegisterDischarge={handleRegisterDischarge}
+                  isLast={i === activeAlerts.length - 1}
+                />
               ))}
             </div>
           )}
-        </section>
-      )}
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-        <a href="/fornecedores" className="flex items-center gap-3 p-4 rounded-2xl border border-border bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200" style={{ boxShadow: "var(--shadow-card)" }}>
-          <span className="h-9 w-9 rounded-xl bg-[#E8F5E9] flex items-center justify-center text-[#1B4332] text-lg font-bold">+</span>
-          <span className="text-[14px] font-semibold text-foreground">Novo fornecedor</span>
-        </a>
-        <a href="/descargas" className="flex items-center justify-between p-4 rounded-2xl border border-border bg-white hover:shadow-[0_4px_12px_rgba(0,0,0,0.08)] transition-all duration-200" style={{ boxShadow: "var(--shadow-card)" }}>
-          <div className="flex items-center gap-3">
-            <span className="h-9 w-9 rounded-xl bg-[#E8F5E9] flex items-center justify-center text-lg">📦</span>
-            <span className="text-[14px] font-semibold text-foreground">Descargas</span>
-          </div>
-          <span className="text-[13px] font-semibold text-[#1B4332]">Ver todas →</span>
-        </a>
+          {/* AI Suggestions */}
+          {suggestions.length > 0 && (
+            <div className="mt-6">
+              <div className="flex items-center gap-2.5 mb-3">
+                <MessageSquare className="h-4 w-4 text-[#1B4332]" />
+                <h2 className="text-[16px] font-bold text-foreground">Sugestões da IA</h2>
+                <span className="bg-[#1B4332] text-white text-[11px] font-bold rounded-full min-w-[22px] h-[22px] flex items-center justify-center px-1.5">
+                  {suggestions.length}
+                </span>
+              </div>
+              <div className="rounded-2xl border border-[#E5E5E5] bg-white overflow-hidden" style={{ boxShadow: "var(--shadow-card)" }}>
+                {suggestions.map((s) => (
+                  <AiSuggestionCard
+                    key={s.id}
+                    suggestion={s}
+                    onConfirm={() => handleSuggestionConfirm(s)}
+                    onEdit={() => handleSuggestionEdit(s)}
+                    onDismiss={() => handleSuggestionDismiss(s.id)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Activity Timeline */}
+        <div>
+          <h2 className="text-[16px] font-bold text-foreground mb-4">Atividade recente</h2>
+          <ActivityFeed />
+        </div>
       </div>
 
+      {/* Dialogs */}
       {selectedAlert?.supplier && (
-        <InteractionForm supplierId={selectedAlert.supplier.id} supplierName={selectedAlert.supplier.name} organizationId={selectedAlert.organization_id} open={interactionOpen} onOpenChange={setInteractionOpen} onSuccess={handleInteractionSuccess} />
+        <InteractionForm
+          supplierId={selectedAlert.supplier.id}
+          supplierName={selectedAlert.supplier.name}
+          organizationId={selectedAlert.organization_id}
+          open={interactionOpen}
+          onOpenChange={setInteractionOpen}
+          onSuccess={handleInteractionSuccess}
+        />
       )}
-      <DischargeForm open={dischargeOpen} onOpenChange={setDischargeOpen} supplierId={dischargeSupplierId} interactionId={dischargeInteractionId} onSuccess={handleDischargeSuccess} />
+      <DischargeForm
+        open={dischargeOpen}
+        onOpenChange={setDischargeOpen}
+        supplierId={dischargeSupplierId}
+        interactionId={dischargeInteractionId}
+        onSuccess={handleDischargeSuccess}
+      />
+      {/* Quick action: New Interaction (select supplier first) */}
+      <QuickInteraction
+        open={quickInteractionOpen}
+        onOpenChange={setQuickInteractionOpen}
+        onSuccess={fetchAlerts}
+      />
 
-      {/* Suggestion interaction form */}
+      {/* Quick action: Schedule supplier */}
+      <QueueForm
+        open={quickQueueOpen}
+        onOpenChange={setQuickQueueOpen}
+        defaultType="agendamento"
+        onSuccess={fetchAlerts}
+      />
+
+      {/* Quick action: New Supplier */}
+      <SupplierForm
+        open={supplierFormOpen}
+        onOpenChange={setSupplierFormOpen}
+        onSuccess={fetchAlerts}
+      />
+
+      {/* Quick action: New Interaction (no pre-selected supplier) */}
+      <DischargeForm
+        open={quickDischargeOpen}
+        onOpenChange={setQuickDischargeOpen}
+        onSuccess={() => { fetchAlerts() }}
+      />
+
       {formDefaults && (
         <InteractionForm
           supplierId={formDefaults.supplierId}
           supplierName={formDefaults.supplierName}
           organizationId={formDefaults.organizationId}
           open={suggestionFormOpen}
-          onOpenChange={(open) => {
-            setSuggestionFormOpen(open)
-            if (!open) {
-              setActiveSuggestion(null)
-              setFormDefaults(null)
-            }
-          }}
+          onOpenChange={setSuggestionFormOpen}
           onSuccess={handleSuggestionLinked}
           defaultContactType={formDefaults.contactType}
           defaultResult={formDefaults.result}
@@ -460,7 +533,6 @@ export function Feed({ userName }: FeedProps) {
           defaultNextStep={formDefaults.nextStep}
           defaultNextStepDate={formDefaults.nextStepDate}
           suggestionId={formDefaults.suggestionId}
-          onSuggestionLinked={handleSuggestionLinked}
         />
       )}
     </div>

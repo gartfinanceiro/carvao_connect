@@ -61,7 +61,7 @@ function DensityText({ value }: { value: number | null }) {
 }
 
 type DischargeWithSupplier = Discharge & {
-  supplier: { name: string; charcoal_type: CharcoalType }
+  supplier: { name: string }
 }
 
 export default function DescargasPage() {
@@ -104,7 +104,7 @@ export default function DescargasPage() {
 
     let dataQuery = supabase
       .from("discharges")
-      .select("*, supplier:suppliers(name, charcoal_type)", { count: "exact" })
+      .select("*, supplier:suppliers(name)", { count: "exact" })
       .gte("discharge_date", startDate)
       .lte("discharge_date", endDate)
 

@@ -1,6 +1,6 @@
 export type CharcoalType = 'eucalipto' | 'tipi' | 'babassu' | 'nativo' | 'misto'
 export type DocStatus = 'regular' | 'pendente' | 'irregular'
-export type SupplierStatus = 'ativo' | 'inativo' | 'bloqueado'
+export type SupplierStatus = 'ativo' | 'inativo' | 'bloqueado' | 'arquivado'
 export type ContactType = 'ligou' | 'recebeu_ligacao' | 'whatsapp' | 'presencial'
 export type ContactResult = 'atendeu' | 'nao_atendeu' | 'caixa_postal' | 'ocupado'
 export type NextStepType = 'retornar_em' | 'aguardar_retorno' | 'nenhum'
@@ -22,9 +22,28 @@ export type SupplierDocumentType =
   | 'shapefile'
   | 'outro'
 
+export type PlanType = 'trial' | 'starter' | 'professional' | 'enterprise' | 'canceled'
+export type SubscriptionStatus = 'trialing' | 'active' | 'past_due' | 'canceled' | 'unpaid'
+export type UserRole = 'admin' | 'member'
+
+export interface PlanLimits {
+  max_suppliers: number
+  max_users: number
+  whatsapp_enabled: boolean
+}
+
 export interface Organization {
   id: string
   name: string
+  plan: PlanType
+  plan_limits: PlanLimits
+  trial_ends_at: string | null
+  subscription_status: SubscriptionStatus
+  stripe_customer_id: string | null
+  stripe_subscription_id: string | null
+  current_period_end: string | null
+  created_by: string | null
+  is_demo: boolean
   created_at: string
   updated_at: string
 }
@@ -33,9 +52,27 @@ export interface Profile {
   id: string
   organization_id: string
   name: string
+  role: UserRole
   created_at: string
   updated_at: string
 }
+
+export type InviteStatus = 'pending' | 'accepted' | 'expired' | 'revoked'
+
+export interface Invite {
+  id: string
+  organization_id: string
+  email: string
+  role: UserRole
+  invited_by: string
+  token: string
+  status: InviteStatus
+  expires_at: string
+  created_at: string
+  accepted_at: string | null
+}
+
+export type PersonType = 'pf' | 'pj'
 
 export interface Supplier {
   id: string
@@ -45,7 +82,8 @@ export interface Supplier {
   phones: string[]
   city: string | null
   state: string | null
-  charcoal_type: CharcoalType
+  contact_name: string | null
+  person_type: PersonType
   avg_density: number | null
   monthly_capacity: number | null
   contracted_loads: number
@@ -235,5 +273,30 @@ export interface Discharge {
   created_by: string | null
   created_at: string
   updated_at: string
-  supplier?: { name: string; charcoal_type: CharcoalType }
+  supplier?: { name: string }
+}
+
+export type QueueEntryType = 'fila' | 'agendamento'
+export type QueueStatus = 'aguardando' | 'em_descarga' | 'concluido' | 'cancelado'
+
+export interface QueueEntry {
+  id: string
+  organization_id: string
+  supplier_id: string
+  discharge_id: string | null
+  entry_type: QueueEntryType
+  truck_plate: string | null
+  driver_name: string | null
+  estimated_volume_mdc: number | null
+  scheduled_date: string
+  scheduled_time: string | null
+  scheduled_position: number | null
+  arrival_time: string | null
+  queue_position: number | null
+  status: QueueStatus
+  notes: string | null
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  suppliers?: { name: string; avg_density: number | null; last_price: number | null }
 }

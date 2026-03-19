@@ -35,12 +35,15 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // Public routes: landing page, login, register, auth callback
+  // Public routes: landing page, login, register, auth callback, onboarding, API routes
   const isPublicRoute =
     pathname === "/" ||
     pathname.startsWith("/login") ||
     pathname.startsWith("/registro") ||
-    pathname.startsWith("/auth")
+    pathname.startsWith("/auth") ||
+    pathname.startsWith("/onboarding") ||
+    pathname.startsWith("/convite") ||
+    pathname.startsWith("/api/")
 
   // Protected routes: everything else (dashboard, fornecedores, descargas, etc.)
   if (!user && !isPublicRoute) {

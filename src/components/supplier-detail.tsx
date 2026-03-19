@@ -19,9 +19,10 @@ import {
   MessageSquare,
   Eye,
   Loader2,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react"
 import { toast } from "sonner"
-import { charcoalTypeLabels } from "@/lib/labels"
 import {
   formatCurrency,
   formatPhone,
@@ -42,6 +43,8 @@ import type { Supplier, WhatsAppConversation } from "@/types/database"
 interface SupplierDetailProps {
   supplier: Supplier
   onRefresh: () => void
+  onArchive?: (supplier: Supplier) => void
+  onReactivate?: (supplier: Supplier) => void
 }
 
 function DocStatusBadge({ status }: { status: string }) {
@@ -78,12 +81,14 @@ function StatusText({ status }: { status: string }) {
       return <span className="text-xs text-muted-foreground font-medium">Inativo</span>
     case "bloqueado":
       return <span className="text-xs text-red-500 font-medium">Bloqueado</span>
+    case "arquivado":
+      return <span className="text-xs text-amber-600 font-medium">Arquivado</span>
     default:
       return null
   }
 }
 
-export function SupplierDetail({ supplier, onRefresh }: SupplierDetailProps) {
+export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }: SupplierDetailProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [interactionOpen, setInteractionOpen] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
@@ -169,12 +174,35 @@ export function SupplierDetail({ supplier, onRefresh }: SupplierDetailProps) {
 
   return (
     <div className="space-y-6">
+      {/* Archived banner */}
+      {supplier.status === "arquivado" && (
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2">
+            <Archive className="h-4 w-4 text-amber-600" />
+            <span className="text-sm font-medium text-amber-800">Este fornecedor está arquivado</span>
+          </div>
+          {onReactivate && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs border-amber-300 hover:bg-amber-100"
+              onClick={() => onReactivate(supplier)}
+            >
+              <ArchiveRestore className="mr-1.5 h-3 w-3" />
+              Reativar
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{supplier.name}</h1>
           <div className="flex flex-wrap items-center gap-3 mt-1">
-            <span className="text-sm text-muted-foreground">{charcoalTypeLabels[supplier.charcoal_type]}</span>
+            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-gray-100 text-gray-500">
+              {supplier.person_type === "pf" ? "PF" : "PJ"}
+            </span>
             <span className="text-muted-foreground/30">·</span>
             <DocStatusBadge status={supplier.doc_status} />
             <span className="text-muted-foreground/30">·</span>
@@ -182,6 +210,12 @@ export function SupplierDetail({ supplier, onRefresh }: SupplierDetailProps) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {supplier.status !== "arquivado" && onArchive && (
+            <Button variant="ghost" className="rounded-xl text-muted-foreground" onClick={() => onArchive(supplier)}>
+              <Archive className="mr-2 h-4 w-4" />
+              Arquivar
+            </Button>
+          )}
           <Button variant="outline" className="rounded-xl" onClick={() => setEditOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Editar
@@ -240,7 +274,7 @@ export function SupplierDetail({ supplier, onRefresh }: SupplierDetailProps) {
               {supplier.avg_density ? `${supplier.avg_density}` : "—"}
             </p>
             <p className="text-xs text-muted-foreground mt-1">
-              kg/mdc · {charcoalTypeLabels[supplier.charcoal_type]}
+              kg/mdc
             </p>
           </CardContent>
         </Card>
@@ -338,6 +372,13 @@ export function SupplierDetail({ supplier, onRefresh }: SupplierDetailProps) {
             <p className="text-xs text-muted-foreground mb-1">CPF/CNPJ</p>
             <span className="text-sm">
               {formatDocument(supplier.document)}
+            </span>
+          </div>
+
+          <div>
+            <p className="text-xs text-muted-foreground mb-1">Negociador</p>
+            <span className="text-sm">
+              {supplier.contact_name || "Não informado"}
             </span>
           </div>
         </CardContent>

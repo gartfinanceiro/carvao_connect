@@ -5,30 +5,43 @@ import { usePathname } from "next/navigation"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Users, Truck, Settings } from "lucide-react"
+import { LayoutDashboard, Users, Truck, ClipboardList, Settings } from "lucide-react"
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Início", icon: LayoutDashboard },
   { href: "/fornecedores", label: "Fornecedores", icon: Users },
   { href: "/descargas", label: "Descargas", icon: Truck },
+  { href: "/fila", label: "Fila", icon: ClipboardList },
   { href: "/configuracoes", label: "Config", icon: Settings },
 ]
 
 export function MobileNav() {
   const pathname = usePathname()
   const [alertCount, setAlertCount] = useState(0)
+  const [queueCount, setQueueCount] = useState(0)
 
   useEffect(() => {
-    async function fetchAlertCount() {
+    async function fetchCounts() {
       const supabase = createClient()
-      const { count } = await supabase
+
+      // Fetch alert count
+      const { count: alertCountResult } = await supabase
         .from("alerts")
         .select("*", { count: "exact", head: true })
         .eq("status", "pendente")
         .lte("due_at", new Date().toISOString())
-      setAlertCount(count ?? 0)
+      setAlertCount(alertCountResult ?? 0)
+
+      // Fetch queue count for today
+      const today = new Date().toISOString().slice(0, 10)
+      const { count: queueCountResult } = await supabase
+        .from("queue_entries")
+        .select("*", { count: "exact", head: true })
+        .eq("scheduled_date", today)
+        .eq("status", "aguardando")
+      setQueueCount(queueCountResult ?? 0)
     }
-    fetchAlertCount()
+    fetchCounts()
   }, [])
 
   return (
@@ -40,7 +53,9 @@ export function MobileNav() {
             item.href === "/"
               ? pathname === "/"
               : pathname.startsWith(item.href)
-          const showBadge = item.href === "/" && alertCount > 0
+          const showBadge = (item.href === "/fila" && queueCount > 0) || (item.href === "/dashboard" && alertCount > 0)
+          const badgeCount = item.href === "/fila" ? queueCount : alertCount
+
           return (
             <Link
               key={item.href}
@@ -56,7 +71,7 @@ export function MobileNav() {
               <span className="text-[10px] font-medium">{item.label}</span>
               {showBadge && (
                 <span className="absolute top-1.5 right-2 bg-[#FF3B30] text-white text-[8px] font-bold rounded-full min-w-[14px] h-[14px] flex items-center justify-center px-0.5">
-                  {alertCount > 99 ? "99+" : alertCount}
+                  {badgeCount > 99 ? "99+" : badgeCount}
                 </span>
               )}
             </Link>

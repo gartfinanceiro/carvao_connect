@@ -11,7 +11,7 @@ import { ptBR } from "date-fns/locale"
 import type { AiSuggestion } from "@/types/database"
 
 export interface SuggestionWithSupplier extends AiSuggestion {
-  supplier: { id: string; name: string; charcoal_type: string } | null
+  supplier: { id: string; name: string } | null
   conversation: { id: string; phone: string } | null
 }
 

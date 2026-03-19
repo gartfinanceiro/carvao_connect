@@ -21,9 +21,9 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { Loader2, Plus, X } from "lucide-react"
 import { toast } from "sonner"
-import { charcoalTypeLabels, UF_OPTIONS } from "@/lib/labels"
+import { UF_OPTIONS } from "@/lib/labels"
 import { validateDocument, validatePhone } from "@/lib/utils"
-import type { Supplier, CharcoalType } from "@/types/database"
+import type { Supplier, PersonType } from "@/types/database"
 
 interface SupplierFormProps {
   open: boolean
@@ -35,10 +35,11 @@ interface SupplierFormProps {
 interface FormData {
   name: string
   document: string
+  person_type: PersonType
+  contact_name: string
   phones: string[]
   city: string
   state: string
-  charcoal_type: CharcoalType
   avg_density: string
   monthly_capacity: string
   contracted_loads: string
@@ -51,10 +52,11 @@ function getInitialFormData(supplier?: Supplier | null): FormData {
   return {
     name: supplier?.name ?? "",
     document: supplier?.document ?? "",
+    person_type: supplier?.person_type ?? "pj",
+    contact_name: supplier?.contact_name ?? "",
     phones: supplier?.phones?.length ? supplier.phones : [""],
     city: supplier?.city ?? "",
     state: supplier?.state ?? "",
-    charcoal_type: supplier?.charcoal_type ?? "eucalipto",
     avg_density: supplier?.avg_density?.toString() ?? "",
     monthly_capacity: supplier?.monthly_capacity?.toString() ?? "",
     contracted_loads: supplier?.contracted_loads?.toString() ?? "0",
@@ -163,10 +165,11 @@ export function SupplierForm({
     const payload = {
       name: form.name.trim(),
       document: form.document.replace(/\D/g, ""),
+      person_type: form.person_type,
+      contact_name: form.contact_name.trim() || null,
       phones,
       city: form.city.trim(),
       state: form.state,
-      charcoal_type: form.charcoal_type,
       avg_density: Number(form.avg_density),
       monthly_capacity: Number(form.monthly_capacity),
       contracted_loads: Number(form.contracted_loads) || 0,
@@ -259,7 +262,7 @@ export function SupplierForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="document">CPF / CNPJ *</Label>
+                <Label htmlFor="document">{form.person_type === "pf" ? "CPF *" : "CNPJ *"}</Label>
                 <Input
                   id="document"
                   value={form.document}
@@ -269,6 +272,36 @@ export function SupplierForm({
                 {errors.document && (
                   <p className="text-xs text-destructive">{errors.document}</p>
                 )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>PF / PJ</Label>
+                <div className="flex gap-2">
+                  {(["pf", "pj"] as const).map((type) => (
+                    <button
+                      key={type}
+                      type="button"
+                      className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg border transition-colors ${
+                        form.person_type === type
+                          ? "bg-[#1B4332] text-white border-[#1B4332]"
+                          : "bg-white text-foreground border-[#E5E5E5] hover:border-[#999]"
+                      }`}
+                      onClick={() => updateField("person_type", type)}
+                    >
+                      {type === "pf" ? "Pessoa Física" : "Pessoa Jurídica"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="contact_name">Negociador</Label>
+                <Input
+                  id="contact_name"
+                  value={form.contact_name}
+                  onChange={(e) => updateField("contact_name", e.target.value)}
+                  placeholder="Nome da pessoa de contato"
+                />
               </div>
 
               <div className="space-y-2">
@@ -346,34 +379,6 @@ export function SupplierForm({
 
             {/* Column 2 */}
             <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Tipo de carvão *</Label>
-                <Select
-                  value={form.charcoal_type}
-                  onValueChange={(v) =>
-                    updateField("charcoal_type", (v ?? "eucalipto") as CharcoalType)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue>
-                      {(value: string) => charcoalTypeLabels[value as CharcoalType] ?? value}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(
-                      Object.entries(charcoalTypeLabels) as [
-                        CharcoalType,
-                        string,
-                      ][]
-                    ).map(([key, label]) => (
-                      <SelectItem key={key} value={key}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="avg_density">Densidade média (kg/mdc) *</Label>
                 <Input

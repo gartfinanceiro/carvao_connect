@@ -10,13 +10,12 @@ import {
 import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
-import type { Alert, AlertType, CharcoalType } from "@/types/database"
+import type { Alert, AlertType } from "@/types/database"
 
 export interface AlertWithSupplier extends Alert {
   supplier: {
     id: string
     name: string
-    charcoal_type: CharcoalType
     phones: string[]
   } | null
 }

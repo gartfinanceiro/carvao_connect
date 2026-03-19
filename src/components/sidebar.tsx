@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   Users,
   Truck,
+  ClipboardList,
   Settings,
   PanelLeftClose,
   PanelLeft,
@@ -19,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/fornecedores", label: "Fornecedores", icon: Users },
   { href: "/descargas", label: "Descargas", icon: Truck },
+  { href: "/fila", label: "Fila", icon: ClipboardList },
   { href: "/configuracoes", label: "Configurações", icon: Settings },
 ]
 
@@ -30,19 +32,33 @@ export function Sidebar({ userName }: SidebarProps) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [alertCount, setAlertCount] = useState(0)
+  const [queueCount, setQueueCount] = useState(0)
 
   useEffect(() => {
-    async function fetchAlertCount() {
+    async function fetchCounts() {
       const supabase = createClient()
-      const { count } = await supabase
+
+      // Fetch alert count
+      const { count: alertCountResult } = await supabase
         .from("alerts")
         .select("*", { count: "exact", head: true })
         .eq("status", "pendente")
         .lte("due_at", new Date().toISOString())
-      setAlertCount(count ?? 0)
+      setAlertCount(alertCountResult ?? 0)
+
+      // Fetch queue count for today
+      try {
+        const today = new Date().toISOString().slice(0, 10)
+        const { count: queueCountResult, error: queueError } = await supabase
+          .from("queue_entries")
+          .select("*", { count: "exact", head: true })
+          .eq("scheduled_date", today)
+          .eq("status", "aguardando")
+        if (!queueError) setQueueCount(queueCountResult ?? 0)
+      } catch {}
     }
-    fetchAlertCount()
-    const interval = setInterval(fetchAlertCount, 60000)
+    fetchCounts()
+    const interval = setInterval(fetchCounts, 60000)
     return () => clearInterval(interval)
   }, [])
 
@@ -67,7 +83,9 @@ export function Sidebar({ userName }: SidebarProps) {
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon
             const isActive = item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href)
-            const showBadge = item.href === "/" && alertCount > 0
+            const showBadge = (item.href === "/fila" && queueCount > 0) || (item.href === "/dashboard" && alertCount > 0)
+            const badgeCount = item.href === "/fila" ? queueCount : alertCount
+
             return (
               <Link
                 key={item.href}
@@ -90,7 +108,7 @@ export function Sidebar({ userName }: SidebarProps) {
                     "bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1",
                     collapsed ? "absolute -top-1 -right-1" : "ml-auto"
                   )}>
-                    {alertCount > 99 ? "99+" : alertCount}
+                    {badgeCount > 99 ? "99+" : badgeCount}
                   </span>
                 )}
               </Link>

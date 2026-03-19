@@ -81,3 +81,9 @@ export function validatePhone(phone: string): boolean {
   const digits = phone.replace(/\D/g, "")
   return digits.length >= 10
 }
+
+export function mdcToToneladas(volumeMdc: number, densityKgMdc: number | null): string | null {
+  if (!densityKgMdc || densityKgMdc <= 0) return null
+  const toneladas = (volumeMdc * densityKgMdc) / 1000
+  return toneladas.toFixed(1)
+}

@@ -9,7 +9,13 @@ import type {
   AlertStatus,
   AlertPriority,
   SupplierDocumentType,
+  PersonType,
 } from "@/types/database"
+
+export const personTypeLabels: Record<PersonType, string> = {
+  pf: "Pessoa Física",
+  pj: "Pessoa Jurídica",
+}
 
 export const charcoalTypeLabels: Record<CharcoalType, string> = {
   eucalipto: "Eucalipto",
@@ -29,6 +35,7 @@ export const supplierStatusLabels: Record<SupplierStatus, string> = {
   ativo: "Ativo",
   inativo: "Inativo",
   bloqueado: "Bloqueado",
+  arquivado: "Arquivado",
 }
 
 export const contactTypeLabels: Record<ContactType, string> = {
@@ -129,3 +136,17 @@ export const UF_OPTIONS = [
   "MA", "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI",
   "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO",
 ] as const
+
+import type { QueueEntryType, QueueStatus } from "@/types/database"
+
+export const queueEntryTypeLabels: Record<QueueEntryType, string> = {
+  fila: "Fila",
+  agendamento: "Agendamento",
+}
+
+export const queueStatusLabels: Record<QueueStatus, string> = {
+  aguardando: "Aguardando",
+  em_descarga: "Em descarga",
+  concluido: "Concluído",
+  cancelado: "Cancelado",
+}

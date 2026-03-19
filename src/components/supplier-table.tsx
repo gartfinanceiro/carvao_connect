@@ -25,8 +25,9 @@ import {
   MessageSquare,
   Eye,
   Pencil,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react"
-import { charcoalTypeLabels } from "@/lib/labels"
 import { formatRelativeDate, getDaysFromNow } from "@/lib/utils"
 import type { Supplier } from "@/types/database"
 
@@ -41,6 +42,8 @@ interface SupplierTableProps {
   onPageChange: (page: number) => void
   onNewInteraction?: (supplier: Supplier) => void
   onEditSupplier?: (supplier: Supplier) => void
+  onArchive?: (supplier: Supplier) => void
+  onReactivate?: (supplier: Supplier) => void
 }
 
 function DocStatusBadge({ status }: { status: string }) {
@@ -74,6 +77,8 @@ export function SupplierTable({
   onPageChange,
   onNewInteraction,
   onEditSupplier,
+  onArchive,
+  onReactivate,
 }: SupplierTableProps) {
   const router = useRouter()
   const totalPages = Math.ceil(totalCount / pageSize)
@@ -109,7 +114,7 @@ export function SupplierTable({
             <TableRow className="border-b border-border/30">
               <SortableHeader column="name">Nome</SortableHeader>
               <TableHead className="hidden sm:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Cidade/UF</TableHead>
-              <SortableHeader column="charcoal_type">Tipo</SortableHeader>
+              <TableHead className="hidden lg:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Negociador</TableHead>
               <TableHead className="hidden lg:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Densidade</TableHead>
               <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Cap.</TableHead>
               <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Contratado</TableHead>
@@ -143,14 +148,17 @@ export function SupplierTable({
                   >
                     <TableCell className="font-medium text-foreground">
                       {supplier.name}
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 ml-2">
+                        {supplier.person_type === "pf" ? "PF" : "PJ"}
+                      </span>
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm">
                       {supplier.city && supplier.state
                         ? `${supplier.city}/${supplier.state}`
                         : supplier.city || supplier.state || "—"}
                     </TableCell>
-                    <TableCell className="text-sm">
-                      {charcoalTypeLabels[supplier.charcoal_type]}
+                    <TableCell className="hidden lg:table-cell text-sm">
+                      {supplier.contact_name ?? "—"}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-sm">
                       {supplier.avg_density
@@ -227,6 +235,34 @@ export function SupplierTable({
                             <Pencil className="mr-2 h-4 w-4" />
                             Editar
                           </DropdownMenuItem>
+                          {supplier.status !== "arquivado" && onArchive && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onArchive(supplier)
+                                }}
+                              >
+                                <Archive className="mr-2 h-4 w-4" />
+                                Arquivar
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                          {supplier.status === "arquivado" && onReactivate && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  onReactivate(supplier)
+                                }}
+                              >
+                                <ArchiveRestore className="mr-2 h-4 w-4" />
+                                Reativar
+                              </DropdownMenuItem>
+                            </>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                       </div>

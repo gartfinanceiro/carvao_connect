@@ -7,33 +7,33 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { charcoalTypeLabels, docStatusLabels, supplierStatusLabels, UF_OPTIONS } from "@/lib/labels"
-import type { CharcoalType, DocStatus, SupplierStatus } from "@/types/database"
+import { docStatusLabels, supplierStatusLabels, personTypeLabels, UF_OPTIONS } from "@/lib/labels"
+import type { DocStatus, PersonType, SupplierStatus } from "@/types/database"
 
 interface SupplierFiltersProps {
-  charcoalType: string
+  personType: string
   docStatus: string
   status: string
   uf: string
-  onCharcoalTypeChange: (value: string) => void
+  onPersonTypeChange: (value: string) => void
   onDocStatusChange: (value: string) => void
   onStatusChange: (value: string) => void
   onUfChange: (value: string) => void
 }
 
 export function SupplierFilters({
-  charcoalType,
+  personType,
   docStatus,
   status,
   uf,
-  onCharcoalTypeChange,
+  onPersonTypeChange,
   onDocStatusChange,
   onStatusChange,
   onUfChange,
 }: SupplierFiltersProps) {
-  const charcoalTypeValueLabel: Record<string, string> = {
-    all: "Todos os tipos",
-    ...charcoalTypeLabels,
+  const personTypeValueLabel: Record<string, string> = {
+    all: "PF / PJ",
+    ...personTypeLabels,
   }
   const docStatusValueLabel: Record<string, string> = {
     all: "Todos os docs",
@@ -50,15 +50,15 @@ export function SupplierFilters({
 
   return (
     <div className="flex flex-wrap gap-3">
-      <Select value={charcoalType} onValueChange={(v) => onCharcoalTypeChange(v ?? "all")}>
-        <SelectTrigger className="w-[160px]">
-          <SelectValue placeholder="Tipo de carvão">
-            {(value: string) => charcoalTypeValueLabel[value] ?? value}
+      <Select value={personType} onValueChange={(v) => onPersonTypeChange(v ?? "all")}>
+        <SelectTrigger className="w-[140px]">
+          <SelectValue placeholder="PF / PJ">
+            {(value: string) => personTypeValueLabel[value] ?? value}
           </SelectValue>
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">Todos os tipos</SelectItem>
-          {(Object.entries(charcoalTypeLabels) as [CharcoalType, string][]).map(
+          <SelectItem value="all">PF / PJ</SelectItem>
+          {(Object.entries(personTypeLabels) as [PersonType, string][]).map(
             ([key, label]) => (
               <SelectItem key={key} value={key}>
                 {label}
