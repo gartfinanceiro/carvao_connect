@@ -8,6 +8,7 @@ import type {
   AlertType,
   AlertStatus,
   AlertPriority,
+  SupplierDocumentType,
 } from "@/types/database"
 
 export const charcoalTypeLabels: Record<CharcoalType, string> = {
@@ -52,10 +53,10 @@ export const contactResultLabels: Record<ContactResult, string> = {
 }
 
 export const contactResultColors: Record<ContactResult, string> = {
-  atendeu: "bg-green-100 text-green-800",
-  nao_atendeu: "bg-yellow-100 text-yellow-800",
-  caixa_postal: "bg-gray-100 text-gray-800",
-  ocupado: "bg-gray-100 text-gray-800",
+  atendeu: "bg-emerald-50 text-emerald-600",
+  nao_atendeu: "bg-amber-50 text-amber-600",
+  caixa_postal: "bg-gray-100 text-gray-600",
+  ocupado: "bg-gray-100 text-gray-600",
 }
 
 export const nextStepTypeLabels: Record<NextStepType, string> = {
@@ -91,6 +92,36 @@ export const alertPriorityLabels: Record<AlertPriority, string> = {
   alta: "Alta",
   media: "Média",
   baixa: "Baixa",
+}
+
+export const supplierDocumentTypeLabels: Record<SupplierDocumentType, string> = {
+  dcf: "DCF (Declaração de Colheita)",
+  taxa_florestal: "Taxa Florestal e Expediente",
+  documentos_pessoais: "Documentos Pessoais (RG/CPF)",
+  conta_deposito: "Conta para Depósito / Procuração",
+  mapa_area: "Mapa da Área (DCF)",
+  certidao_imovel: "Certidão de Registro do Imóvel",
+  contrato_arrendamento: "Contrato de Arrendamento",
+  inventario_area: "Inventário da Área (>50 ha)",
+  cadastro_tecnico_federal: "Cadastro Técnico Federal",
+  inscricao_estadual: "Inscrição Estadual do Imóvel",
+  shapefile: "Shapefile",
+  outro: "Outro Documento",
+}
+
+export const supplierDocumentTypeDescriptions: Record<SupplierDocumentType, string> = {
+  dcf: "Cópia da declaração de colheita de florestas plantadas e produção de carvão",
+  taxa_florestal: "Cópia da taxa florestal e expediente referente à DCF",
+  documentos_pessoais: "Cópia do RG e CPF do produtor",
+  conta_deposito: "Conta para depósito em nome do produtor. Se procurador, incluir procuração",
+  mapa_area: "Mapa da área descrita na DCF para exploração",
+  certidao_imovel: "Cópia da certidão de registro do imóvel",
+  contrato_arrendamento: "Contrato de arrendamento com proprietário (se imóvel arrendado)",
+  inventario_area: "Cópia do inventário da área a ser explorada (obrigatório se >50 ha)",
+  cadastro_tecnico_federal: "Cópia do Cadastro Técnico Federal",
+  inscricao_estadual: "Cópia do registro de inscrição estadual referente ao imóvel explorado",
+  shapefile: "Arquivo shapefile da área",
+  outro: "Outro documento relevante",
 }
 
 export const UF_OPTIONS = [

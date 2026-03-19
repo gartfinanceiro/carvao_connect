@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Badge } from "@/components/ui/badge"
-import { MessageSquare, Loader2 } from "lucide-react"
+import { MessageSquare, Loader2, Bot } from "lucide-react"
 import {
   contactTypeLabels,
   contactTypeIcons,
@@ -17,6 +17,7 @@ import type { Interaction } from "@/types/database"
 
 interface InteractionWithUser extends Interaction {
   profiles: { name: string } | null
+  ai_suggestions?: { id: string; conversation_id: string }[] | null
 }
 
 interface InteractionTimelineProps {
@@ -39,7 +40,8 @@ export function InteractionTimeline({
       .from("interactions")
       .select(`
         *,
-        profiles:user_id (name)
+        profiles:user_id (name),
+        ai_suggestions (id, conversation_id)
       `)
       .eq("supplier_id", supplierId)
       .order("created_at", { ascending: false })
@@ -114,9 +116,15 @@ export function InteractionTimeline({
                   {typeLabel}
                 </span>
                 <span className="text-muted-foreground">→</span>
-                <Badge className={`${resultColor} hover:${resultColor.split(" ")[0]}`}>
+                <Badge className={`rounded-full px-2.5 py-0.5 text-xs ${resultColor}`}>
                   {resultLabel}
                 </Badge>
+                {interaction.ai_suggestions && interaction.ai_suggestions.length > 0 && (
+                  <Badge className="rounded-full px-2 py-0.5 text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200/50 gap-1">
+                    <Bot className="h-3 w-3" />
+                    via WhatsApp
+                  </Badge>
+                )}
               </div>
 
               {/* Notes */}

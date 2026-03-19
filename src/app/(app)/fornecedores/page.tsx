@@ -4,7 +4,6 @@ import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
 import { Plus, Search } from "lucide-react"
 import { SupplierTable } from "@/components/supplier-table"
 import { SupplierFilters } from "@/components/supplier-filters"
@@ -113,12 +112,14 @@ export default function FornecedoresPage() {
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold">Fornecedores</h1>
-          <Badge variant="secondary">{totalCount}</Badge>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Fornecedores</h1>
+          <p className="text-sm text-muted-foreground">
+            <span className="bg-muted text-muted-foreground text-xs font-medium rounded-full px-2.5 py-0.5 inline-block">{totalCount} cadastrados</span>
+          </p>
         </div>
         <Button
-          className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+          className="bg-[#1B4332] hover:bg-[#2D6A4F] rounded-xl"
           onClick={handleNewSupplier}
         >
           <Plus className="mr-2 h-4 w-4" />
@@ -127,13 +128,13 @@ export default function FornecedoresPage() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="relative max-w-lg">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Buscar por nome, cidade ou CPF/CNPJ..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="pl-9 rounded-xl"
         />
       </div>
 

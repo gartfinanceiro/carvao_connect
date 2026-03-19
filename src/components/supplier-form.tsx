@@ -19,7 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Loader2, Plus, X } from "lucide-react"
 import { toast } from "sonner"
 import { charcoalTypeLabels, UF_OPTIONS } from "@/lib/labels"
@@ -44,8 +43,7 @@ interface FormData {
   monthly_capacity: string
   contracted_loads: string
   last_price: string
-  dap_expiry: string
-  gf_expiry: string
+  dcf_issue_date: string
   notes: string
 }
 
@@ -61,8 +59,7 @@ function getInitialFormData(supplier?: Supplier | null): FormData {
     monthly_capacity: supplier?.monthly_capacity?.toString() ?? "",
     contracted_loads: supplier?.contracted_loads?.toString() ?? "0",
     last_price: supplier?.last_price?.toString() ?? "",
-    dap_expiry: supplier?.dap_expiry ?? "",
-    gf_expiry: supplier?.gf_expiry ?? "",
+    dcf_issue_date: supplier?.dcf_issue_date ?? "",
     notes: supplier?.notes ?? "",
   }
 }
@@ -174,8 +171,7 @@ export function SupplierForm({
       monthly_capacity: Number(form.monthly_capacity),
       contracted_loads: Number(form.contracted_loads) || 0,
       last_price: form.last_price ? Number(form.last_price) : null,
-      dap_expiry: form.dap_expiry || null,
-      gf_expiry: form.gf_expiry || null,
+      dcf_issue_date: form.dcf_issue_date || null,
       notes: form.notes.trim() || null,
     }
 
@@ -208,16 +204,30 @@ export function SupplierForm({
   }
 
   // Compute doc_status preview
+  // Calcula vencimento da DCF (emissão + 3 anos)
+  function getDcfExpiry(): Date | null {
+    if (!form.dcf_issue_date) return null
+    const issue = new Date(form.dcf_issue_date)
+    const expiry = new Date(issue)
+    expiry.setFullYear(expiry.getFullYear() + 3)
+    return expiry
+  }
+
   function getDocStatusPreview(): string {
-    if (!form.dap_expiry && !form.gf_expiry) return "pendente"
+    const expiry = getDcfExpiry()
+    if (!expiry) return "pendente"
     const now = new Date()
     const in30Days = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-    const dap = form.dap_expiry ? new Date(form.dap_expiry) : null
-    const gf = form.gf_expiry ? new Date(form.gf_expiry) : null
 
-    if ((dap && dap < now) || (gf && gf < now)) return "irregular"
-    if ((dap && dap < in30Days) || (gf && gf < in30Days)) return "pendente"
+    if (expiry < now) return "irregular"
+    if (expiry < in30Days) return "pendente"
     return "regular"
+  }
+
+  function formatDcfExpiry(): string {
+    const expiry = getDcfExpiry()
+    if (!expiry) return ""
+    return expiry.toLocaleDateString("pt-BR")
   }
 
   const docPreview = getDocStatusPreview()
@@ -437,40 +447,31 @@ export function SupplierForm({
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
               <div className="space-y-2">
-                <Label htmlFor="dap_expiry">Validade DAP</Label>
+                <Label htmlFor="dcf_issue_date">Data de emissão da DCF</Label>
                 <Input
-                  id="dap_expiry"
+                  id="dcf_issue_date"
                   type="date"
-                  value={form.dap_expiry}
-                  onChange={(e) => updateField("dap_expiry", e.target.value)}
+                  value={form.dcf_issue_date}
+                  onChange={(e) => updateField("dcf_issue_date", e.target.value)}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="gf_expiry">Validade GF</Label>
-                <Input
-                  id="gf_expiry"
-                  type="date"
-                  value={form.gf_expiry}
-                  onChange={(e) => updateField("gf_expiry", e.target.value)}
-                />
+                <Label>Vencimento (3 anos)</Label>
+                <p className="text-sm h-9 flex items-center font-medium">
+                  {formatDcfExpiry() || "—"}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Status documental</Label>
                 <div>
                   {docPreview === "regular" && (
-                    <Badge className="bg-green-100 text-green-800 hover:bg-green-100">
-                      Regular
-                    </Badge>
+                    <span className="text-xs text-emerald-600 font-medium">Regular</span>
                   )}
                   {docPreview === "pendente" && (
-                    <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">
-                      Pendente
-                    </Badge>
+                    <span className="text-xs text-amber-600 font-medium">Pendente</span>
                   )}
                   {docPreview === "irregular" && (
-                    <Badge className="bg-red-100 text-red-800 hover:bg-red-100">
-                      Irregular
-                    </Badge>
+                    <span className="text-xs text-red-500 font-medium">Irregular</span>
                   )}
                 </div>
               </div>

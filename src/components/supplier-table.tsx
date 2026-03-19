@@ -9,7 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -47,21 +46,21 @@ interface SupplierTableProps {
 function DocStatusBadge({ status }: { status: string }) {
   switch (status) {
     case "regular":
-      return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Regular</Badge>
+      return <span className="bg-emerald-50 text-emerald-700 border border-emerald-200/50 text-[11px] font-medium rounded-full px-2 py-0.5 inline-block">Regular</span>
     case "pendente":
-      return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Pendente</Badge>
+      return <span className="bg-amber-50 text-amber-700 border border-amber-200/50 text-[11px] font-medium rounded-full px-2 py-0.5 inline-block">Pendente</span>
     case "irregular":
-      return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Irregular</Badge>
+      return <span className="bg-red-50 text-[#FF3B30] border border-[#FF3B30]/15 text-[11px] font-medium rounded-full px-2 py-0.5 inline-block">Irregular</span>
     default:
       return null
   }
 }
 
-function getContactColorClass(daysSinceContact: number | null): string {
-  if (daysSinceContact === null) return "text-muted-foreground"
-  if (daysSinceContact > 14) return "text-red-600 font-medium"
-  if (daysSinceContact > 7) return "text-amber-600 font-medium"
-  return "text-green-600 font-medium"
+function getLastContactClass(daysSinceContact: number | null): { bgClass: string; textClass: string } {
+  if (daysSinceContact === null) return { bgClass: "", textClass: "text-muted-foreground" }
+  if (daysSinceContact <= 7) return { bgClass: "bg-green-50", textClass: "text-green-700" }
+  if (daysSinceContact <= 14) return { bgClass: "bg-amber-50", textClass: "text-amber-700" }
+  return { bgClass: "bg-red-50", textClass: "text-[#FF3B30]" }
 }
 
 export function SupplierTable({
@@ -89,7 +88,7 @@ export function SupplierTable({
     const isActive = sortColumn === column
     return (
       <TableHead
-        className="cursor-pointer select-none hover:bg-muted/50"
+        className="cursor-pointer select-none hover:bg-muted/50 bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
         onClick={() => onSort(column)}
       >
         <div className="flex items-center gap-1">
@@ -104,17 +103,17 @@ export function SupplierTable({
 
   return (
     <div>
-      <div className="rounded-md border overflow-x-auto">
+      <div className="rounded-2xl border border-border/50 overflow-hidden bg-white">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="border-b border-border/30">
               <SortableHeader column="name">Nome</SortableHeader>
-              <TableHead className="hidden sm:table-cell">Cidade/UF</TableHead>
+              <TableHead className="hidden sm:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Cidade/UF</TableHead>
               <SortableHeader column="charcoal_type">Tipo</SortableHeader>
-              <TableHead className="hidden lg:table-cell">Densidade</TableHead>
-              <TableHead className="hidden md:table-cell">Cap.</TableHead>
-              <TableHead className="hidden md:table-cell">Contratado</TableHead>
-              <TableHead className="hidden md:table-cell">Ocioso</TableHead>
+              <TableHead className="hidden lg:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Densidade</TableHead>
+              <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Cap.</TableHead>
+              <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Contratado</TableHead>
+              <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Ocioso</TableHead>
               <SortableHeader column="doc_status">Docs</SortableHeader>
               <SortableHeader column="last_contact_at">Último contato</SortableHeader>
               <TableHead className="w-10" />
@@ -132,58 +131,61 @@ export function SupplierTable({
                 const idle =
                   (supplier.monthly_capacity ?? 0) - supplier.contracted_loads
                 const daysSinceContact = getDaysFromNow(supplier.last_contact_at)
-                const contactColorClass = getContactColorClass(daysSinceContact)
+                const lastContactClass = getLastContactClass(daysSinceContact)
 
                 return (
                   <TableRow
                     key={supplier.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="group cursor-pointer hover:bg-muted/20 transition-colors border-b border-border/30 [&>td]:py-3"
                     onClick={() =>
                       router.push(`/fornecedores/${supplier.id}`)
                     }
                   >
-                    <TableCell className="font-medium">
+                    <TableCell className="font-medium text-foreground">
                       {supplier.name}
                     </TableCell>
-                    <TableCell className="hidden sm:table-cell">
+                    <TableCell className="hidden sm:table-cell text-sm">
                       {supplier.city && supplier.state
                         ? `${supplier.city}/${supplier.state}`
                         : supplier.city || supplier.state || "—"}
                     </TableCell>
-                    <TableCell>
+                    <TableCell className="text-sm">
                       {charcoalTypeLabels[supplier.charcoal_type]}
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell">
+                    <TableCell className="hidden lg:table-cell text-sm">
                       {supplier.avg_density
                         ? `${supplier.avg_density} kg/mdc`
                         : "—"}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">
+                    <TableCell className="hidden md:table-cell text-right tabular-nums text-sm">
                       {supplier.monthly_capacity ?? "—"}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">
+                    <TableCell className="hidden md:table-cell text-right tabular-nums text-sm">
                       {supplier.contracted_loads}
                     </TableCell>
-                    <TableCell className="hidden md:table-cell">
+                    <TableCell className="hidden md:table-cell text-right tabular-nums">
                       {idle > 0 ? (
-                        <span className="font-bold text-[#1B4332]">
+                        <span className="font-medium text-emerald-600">
                           {idle}
                         </span>
                       ) : (
-                        <span>{idle}</span>
+                        <span className="text-muted-foreground">{idle}</span>
                       )}
                     </TableCell>
                     <TableCell>
                       <DocStatusBadge status={supplier.doc_status} />
                     </TableCell>
                     <TableCell>
-                      <span className={contactColorClass}>
-                        {supplier.last_contact_at
-                          ? formatRelativeDate(supplier.last_contact_at)
-                          : "Sem contato"}
-                      </span>
+                      {supplier.last_contact_at ? (
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] inline-block ${lastContactClass.bgClass} ${lastContactClass.textClass}`}>
+                          {formatRelativeDate(supplier.last_contact_at)}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">Sem contato</span>
+                      )}
                     </TableCell>
                     <TableCell>
+                      <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                       <DropdownMenu>
                         <DropdownMenuTrigger
                           render={
@@ -227,6 +229,7 @@ export function SupplierTable({
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      </div>
                     </TableCell>
                   </TableRow>
                 )
@@ -239,7 +242,7 @@ export function SupplierTable({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Mostrando {(page - 1) * pageSize + 1}–
             {Math.min(page * pageSize, totalCount)} de {totalCount}
           </p>
@@ -247,17 +250,19 @@ export function SupplierTable({
             <Button
               variant="outline"
               size="sm"
+              className="rounded-lg"
               disabled={page <= 1}
               onClick={() => onPageChange(page - 1)}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm">
+            <span className="text-xs text-muted-foreground">
               {page} de {totalPages}
             </span>
             <Button
               variant="outline"
               size="sm"
+              className="rounded-lg"
               disabled={page >= totalPages}
               onClick={() => onPageChange(page + 1)}
             >

@@ -33,20 +33,30 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  const isAuthPage =
-    request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/registro") ||
-    request.nextUrl.pathname.startsWith("/auth")
+  const pathname = request.nextUrl.pathname
 
-  if (!user && !isAuthPage) {
+  // Public routes: landing page, login, register, auth callback
+  const isPublicRoute =
+    pathname === "/" ||
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/registro") ||
+    pathname.startsWith("/auth")
+
+  // Protected routes: everything else (dashboard, fornecedores, descargas, etc.)
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
     url.pathname = "/login"
     return NextResponse.redirect(url)
   }
 
-  if (user && isAuthPage && !request.nextUrl.pathname.startsWith("/auth")) {
+  // Logged-in users on auth pages -> redirect to dashboard
+  const isAuthPage =
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/registro")
+
+  if (user && isAuthPage) {
     const url = request.nextUrl.clone()
-    url.pathname = "/"
+    url.pathname = "/dashboard"
     return NextResponse.redirect(url)
   }
 

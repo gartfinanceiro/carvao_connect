@@ -1,16 +1,19 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Plus_Jakarta_Sans, Inter } from "next/font/google"
 import { Toaster } from "@/components/ui/sonner"
 import "./globals.css"
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const jakarta = Plus_Jakarta_Sans({
+  variable: "--font-jakarta",
   subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
 })
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 })
 
 export const metadata: Metadata = {
@@ -18,7 +21,7 @@ export const metadata: Metadata = {
   description:
     "CRM de compras de carvão vegetal para siderúrgicas e guseiras. Cadastro de fornecedores, acompanhamento de interações e alertas inteligentes.",
   icons: {
-    icon: "/favicon.svg",
+    icon: "/icon-original.png",
   },
 }
 
@@ -28,10 +31,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="pt-BR">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+    <html lang="pt-BR" data-scroll-behavior="smooth">
+      <body className={`${jakarta.variable} ${inter.variable} font-sans antialiased`}>
         {children}
         <Toaster richColors position="top-right" />
       </body>

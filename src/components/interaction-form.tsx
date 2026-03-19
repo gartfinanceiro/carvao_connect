@@ -33,6 +33,16 @@ interface InteractionFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSuccess: () => void
+  defaultContactType?: ContactType
+  defaultResult?: ContactResult
+  defaultNotes?: string
+  defaultLoadPromised?: boolean
+  defaultVolume?: string
+  defaultDate?: Date
+  defaultNextStep?: NextStepType
+  defaultNextStepDate?: Date
+  suggestionId?: string
+  onSuggestionLinked?: (interactionId: string) => void
 }
 
 export function InteractionForm({
@@ -42,28 +52,38 @@ export function InteractionForm({
   open,
   onOpenChange,
   onSuccess,
+  defaultContactType,
+  defaultResult,
+  defaultNotes,
+  defaultLoadPromised,
+  defaultVolume,
+  defaultDate,
+  defaultNextStep,
+  defaultNextStepDate,
+  suggestionId,
+  onSuggestionLinked,
 }: InteractionFormProps) {
-  const [contactType, setContactType] = useState<ContactType | null>(null)
-  const [result, setResult] = useState<ContactResult | null>(null)
-  const [notes, setNotes] = useState("")
-  const [loadPromised, setLoadPromised] = useState(false)
-  const [promisedVolume, setPromisedVolume] = useState("1")
-  const [promisedDate, setPromisedDate] = useState<Date | undefined>(undefined)
-  const [nextStep, setNextStep] = useState<NextStepType | null>(null)
-  const [nextStepDate, setNextStepDate] = useState<Date | undefined>(undefined)
+  const [contactType, setContactType] = useState<ContactType | null>(defaultContactType ?? null)
+  const [result, setResult] = useState<ContactResult | null>(defaultResult ?? null)
+  const [notes, setNotes] = useState(defaultNotes ?? "")
+  const [loadPromised, setLoadPromised] = useState(defaultLoadPromised ?? false)
+  const [promisedVolume, setPromisedVolume] = useState(defaultVolume ?? "1")
+  const [promisedDate, setPromisedDate] = useState<Date | undefined>(defaultDate)
+  const [nextStep, setNextStep] = useState<NextStepType | null>(defaultNextStep ?? null)
+  const [nextStepDate, setNextStepDate] = useState<Date | undefined>(defaultNextStepDate)
   const [nextStepTime, setNextStepTime] = useState("09:00")
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   function resetForm() {
-    setContactType(null)
-    setResult(null)
-    setNotes("")
-    setLoadPromised(false)
-    setPromisedVolume("1")
-    setPromisedDate(undefined)
-    setNextStep(null)
-    setNextStepDate(undefined)
+    setContactType(defaultContactType ?? null)
+    setResult(defaultResult ?? null)
+    setNotes(defaultNotes ?? "")
+    setLoadPromised(defaultLoadPromised ?? false)
+    setPromisedVolume(defaultVolume ?? "1")
+    setPromisedDate(defaultDate)
+    setNextStep(defaultNextStep ?? null)
+    setNextStepDate(defaultNextStepDate)
     setNextStepTime("09:00")
     setErrors({})
   }
@@ -152,12 +172,29 @@ export function InteractionForm({
         : null,
     }
 
-    const { error } = await supabase.from("interactions").insert(payload)
+    const { data: insertedData, error } = await supabase
+      .from("interactions")
+      .insert(payload)
+      .select("id")
+      .single()
 
     if (error) {
       toast.error("Erro ao registrar interação.")
       setLoading(false)
       return
+    }
+
+    // Link AI suggestion if present
+    if (suggestionId && insertedData) {
+      await supabase
+        .from("ai_suggestions")
+        .update({
+          status: "accepted",
+          interaction_id: insertedData.id,
+          accepted_at: new Date().toISOString(),
+        })
+        .eq("id", suggestionId)
+      onSuggestionLinked?.(insertedData.id)
     }
 
     toast.success("Interação registrada!")
@@ -193,7 +230,7 @@ export function InteractionForm({
                   className={cn(
                     "flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
                     contactType === key
-                      ? "border-[#1B4332] bg-[#D8F3DC] text-[#1B4332]"
+                      ? "border-[#1B4332] bg-[#E8F5E9] text-[#1B4332]"
                       : "border-border hover:bg-muted"
                   )}
                 >
@@ -225,7 +262,7 @@ export function InteractionForm({
                   className={cn(
                     "rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors",
                     result === key
-                      ? "border-[#1B4332] bg-[#D8F3DC] text-[#1B4332]"
+                      ? "border-[#1B4332] bg-[#E8F5E9] text-[#1B4332]"
                       : "border-border hover:bg-muted"
                   )}
                 >
@@ -339,8 +376,8 @@ export function InteractionForm({
 
               {/* Info for "não atendeu" */}
               {result === "nao_atendeu" && (
-                <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 flex items-start gap-2">
-                  <Info className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
+                <div className="rounded-lg bg-[#E8F5E9] border border-blue-200 p-3 flex items-start gap-2">
+                  <Info className="h-4 w-4 text-[#1B4332] mt-0.5 shrink-0" />
                   <p className="text-sm text-blue-800">
                     Fornecedor não atendeu. Deseja agendar um retorno abaixo?
                   </p>
@@ -363,7 +400,7 @@ export function InteractionForm({
                       className={cn(
                         "flex items-center gap-2 rounded-lg border px-3 py-2.5 cursor-pointer transition-colors",
                         nextStep === key
-                          ? "border-[#1B4332] bg-[#D8F3DC] text-[#1B4332]"
+                          ? "border-[#1B4332] bg-[#E8F5E9] text-[#1B4332]"
                           : "border-border hover:bg-muted"
                       )}
                     >

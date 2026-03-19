@@ -3,14 +3,12 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Badge } from "@/components/ui/badge"
-import { Separator } from "@/components/ui/separator"
-import { Loader2, LogOut, RefreshCw, User, Building2, Bell } from "lucide-react"
+import { Loader2, LogOut, MessageSquare, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { WhatsAppSetup } from "@/components/whatsapp-setup"
 
 interface ConfiguracoesClientProps {
   userName: string
@@ -71,20 +69,15 @@ export function ConfiguracoesClient({
   }
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-2xl">
-      <h1 className="text-2xl font-bold">Configurações</h1>
+    <div className="p-4 md:p-6 max-w-2xl">
+      <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
 
       {/* Account */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Minha conta
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Nome</Label>
+      <section className="mt-8">
+        <h2 className="text-sm font-medium text-foreground">Minha conta</h2>
+        <div className="mt-4 space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="name" className="text-xs text-muted-foreground">Nome</Label>
             <div className="flex gap-2">
               <Input
                 id="name"
@@ -92,7 +85,9 @@ export function ConfiguracoesClient({
                 onChange={(e) => setName(e.target.value)}
               />
               <Button
-                className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs active:scale-[0.98]"
                 onClick={handleSaveName}
                 disabled={savingName || name.trim() === userName}
               >
@@ -101,51 +96,48 @@ export function ConfiguracoesClient({
               </Button>
             </div>
           </div>
-          <div className="space-y-2">
-            <Label>Email</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Email</Label>
             <Input value={userEmail} disabled />
           </div>
-          <Separator />
-          <Button variant="outline" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Sair
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
+
+      <div className="border-t border-black/[0.04] my-8" />
 
       {/* Organization */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Building2 className="h-4 w-4" />
-            Organização
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{orgName || "Organização"}</p>
-              <p className="text-xs text-muted-foreground">Nome da organização</p>
-            </div>
+      <section>
+        <h2 className="text-sm font-medium text-foreground">Organização</h2>
+        <div className="mt-4 space-y-2">
+          <div>
+            <p className="text-sm">{orgName || "Organização"}</p>
+            <p className="text-xs text-muted-foreground">Nome da organização</p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Plano:</span>
-            <Badge className="bg-[#D8F3DC] text-[#1B4332] hover:bg-[#D8F3DC]">
-              Trial — MVP
-            </Badge>
-          </div>
-        </CardContent>
-      </Card>
+          <p className="text-sm text-muted-foreground">
+            Plano: Trial — MVP
+          </p>
+        </div>
+      </section>
+
+      <div className="border-t border-black/[0.04] my-8" />
+
+      {/* WhatsApp */}
+      <section>
+        <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
+          <MessageSquare className="h-4 w-4" />
+          WhatsApp
+        </h2>
+        <div className="mt-4">
+          <WhatsAppSetup />
+        </div>
+      </section>
+
+      <div className="border-t border-black/[0.04] my-8" />
 
       {/* Alerts */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Alertas
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <section>
+        <h2 className="text-sm font-medium text-foreground">Alertas</h2>
+        <div className="mt-4 space-y-3">
           <p className="text-sm text-muted-foreground">
             Alertas de vencimento de documentos e fornecedores inativos são verificados diariamente.
           </p>
@@ -153,6 +145,7 @@ export function ConfiguracoesClient({
             variant="outline"
             onClick={handleRefreshAlerts}
             disabled={refreshingAlerts}
+            className="active:scale-[0.98]"
           >
             {refreshingAlerts ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -161,8 +154,18 @@ export function ConfiguracoesClient({
             )}
             Atualizar alertas
           </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
+
+      <div className="border-t border-black/[0.04] my-8" />
+
+      {/* Logout */}
+      <section>
+        <Button variant="ghost" onClick={handleLogout} className="text-muted-foreground hover:text-foreground">
+          <LogOut className="mr-2 h-4 w-4" />
+          Sair
+        </Button>
+      </section>
     </div>
   )
 }

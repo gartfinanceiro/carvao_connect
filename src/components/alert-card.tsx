@@ -7,8 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { MessageSquare, Clock, ChevronDown, CheckCircle2 } from "lucide-react"
-import { alertTypeIcons } from "@/lib/labels"
+import { ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
 import type { Alert, AlertType, CharcoalType } from "@/types/database"
@@ -28,6 +27,8 @@ interface AlertCardProps {
   onContact: (alert: AlertWithSupplier) => void
   onSnooze: (alertId: string) => void
   onDismiss: (alertId: string, reason: string) => void
+  onRegisterDischarge?: (supplierId: string, interactionId?: string) => void
+  isLast?: boolean
 }
 
 function getRelativeTime(dateString: string, section: string): string {
@@ -35,7 +36,7 @@ function getRelativeTime(dateString: string, section: string): string {
   const now = new Date()
 
   if (section === "done") {
-    return `concluído ${date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`
+    return date.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
   }
 
   const diffMs = date.getTime() - now.getTime()
@@ -50,21 +51,15 @@ function getRelativeTime(dateString: string, section: string): string {
   return `em ${diffDays} dias`
 }
 
-const borderColors = {
-  overdue: "border-l-red-500",
-  today: "border-l-amber-500",
-  upcoming: "border-l-gray-300",
-  done: "border-l-green-500",
-}
-
 export function AlertCard({
   alert,
   section,
   onContact,
   onSnooze,
   onDismiss,
+  onRegisterDischarge,
+  isLast = false,
 }: AlertCardProps) {
-  const icon = alertTypeIcons[alert.type as AlertType]
   const isDone = section === "done"
   const timeLabel = getRelativeTime(
     isDone ? alert.updated_at : alert.due_at,
@@ -72,85 +67,68 @@ export function AlertCard({
   )
 
   return (
-    <div
-      className={cn(
-        "rounded-lg border border-l-4 bg-white p-4 transition-all hover:shadow-sm",
-        borderColors[section],
-        isDone && "opacity-60"
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3 min-w-0 flex-1">
-          <span className="text-lg mt-0.5 shrink-0">
-            {isDone ? "" : icon}
-            {isDone && <CheckCircle2 className="h-5 w-5 text-green-600" />}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-semibold truncate">
-                {alert.supplier ? (
-                  <Link
-                    href={`/fornecedores/${alert.supplier.id}`}
-                    className="hover:underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {alert.title}
-                  </Link>
-                ) : (
-                  alert.title
-                )}
-              </h3>
-            </div>
-            {alert.description && (
-              <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
-                {alert.description}
-              </p>
-            )}
-          </div>
+    <div className={cn(
+      "py-4 px-5",
+      !isLast && "border-b border-border/60",
+      isDone && "opacity-40"
+    )}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold text-foreground leading-snug">
+            {alert.supplier ? (
+              <Link href={`/fornecedores/${alert.supplier.id}`} className="hover:underline">
+                {alert.title}
+              </Link>
+            ) : alert.title}
+          </p>
+          {alert.description && (
+            <p className="text-[13px] text-muted-foreground mt-0.5 leading-relaxed line-clamp-1">
+              {alert.description}
+            </p>
+          )}
         </div>
-        <span className="text-xs text-muted-foreground whitespace-nowrap shrink-0">
+        <span className="text-[12px] font-medium text-muted-foreground whitespace-nowrap shrink-0">
           {timeLabel}
         </span>
       </div>
 
       {!isDone && (
-        <div className="flex items-center gap-2 mt-3 ml-8">
+        <div className="flex items-center gap-2 mt-3">
           <Button
             size="sm"
-            className="bg-[#1B4332] hover:bg-[#2D6A4F] h-7 text-xs"
+            className="bg-[#1B4332] hover:bg-[#2D6A4F] text-white h-8 text-[13px] font-semibold px-4 rounded-lg active:scale-[0.97] transition-all"
             onClick={() => onContact(alert)}
           >
-            <MessageSquare className="mr-1 h-3 w-3" />
             Registrar contato
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
+          {alert.type === "confirmacao_carga" && alert.supplier && onRegisterDischarge && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-[13px] font-semibold px-4 rounded-lg border-[#1B4332]/20 text-[#1B4332] hover:bg-[#E8F5E9] active:scale-[0.97] transition-all"
+              onClick={() => onRegisterDischarge(alert.supplier!.id, alert.interaction_id ?? undefined)}
+            >
+              Registrar descarga
+            </Button>
+          )}
+          <button
+            className="text-[13px] font-medium text-muted-foreground hover:text-foreground ml-1 transition-colors"
             onClick={() => onSnooze(alert.id)}
           >
-            <Clock className="mr-1 h-3 w-3" />
-            Adiar 1 dia
-          </Button>
+            Adiar
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger
               render={
-                <Button variant="ghost" size="sm" className="h-7 text-xs" />
+                <Button variant="ghost" size="sm" className="h-8 text-[13px] font-medium px-2 text-muted-foreground hover:text-foreground" />
               }
             >
-              Descartar
-              <ChevronDown className="ml-1 h-3 w-3" />
+              Descartar <ChevronDown className="ml-0.5 h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Resolvido")}>
-                Resolvido
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Não relevante")}>
-                Não relevante
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Duplicado")}>
-                Duplicado
-              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Resolvido")}>Resolvido</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Não relevante")}>Não relevante</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onDismiss(alert.id, "Duplicado")}>Duplicado</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
