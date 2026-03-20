@@ -3,9 +3,11 @@
 import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { useSubscription } from "@/components/subscription-provider"
+import type { ModuleKey } from "@/lib/permissions"
 import {
   LayoutDashboard,
   Users,
@@ -16,12 +18,12 @@ import {
   PanelLeft,
 } from "lucide-react"
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/fornecedores", label: "Fornecedores", icon: Users },
-  { href: "/descargas", label: "Descargas", icon: Truck },
-  { href: "/fila", label: "Fila", icon: ClipboardList },
-  { href: "/configuracoes", label: "Configurações", icon: Settings },
+const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module: ModuleKey }[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, module: "feed" },
+  { href: "/fornecedores", label: "Fornecedores", icon: Users, module: "fornecedores" },
+  { href: "/descargas", label: "Descargas", icon: Truck, module: "descargas" },
+  { href: "/fila", label: "Fila", icon: ClipboardList, module: "fila" },
+  { href: "/configuracoes", label: "Configurações", icon: Settings, module: "configuracoes" },
 ]
 
 interface SidebarProps {
@@ -33,6 +35,12 @@ export function Sidebar({ userName }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [alertCount, setAlertCount] = useState(0)
   const [queueCount, setQueueCount] = useState(0)
+  const { hasAccess } = useSubscription()
+
+  const visibleItems = useMemo(
+    () => NAV_ITEMS.filter((item) => hasAccess(item.module)),
+    [hasAccess]
+  )
 
   useEffect(() => {
     async function fetchCounts() {
@@ -80,7 +88,7 @@ export function Sidebar({ userName }: SidebarProps) {
 
       <nav className="flex-1 px-3 pt-5">
         <div className="space-y-0.5">
-          {NAV_ITEMS.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon
             const isActive = item.href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(item.href)
             const showBadge = (item.href === "/fila" && queueCount > 0) || (item.href === "/dashboard" && alertCount > 0)

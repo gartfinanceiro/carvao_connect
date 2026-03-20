@@ -43,6 +43,7 @@ import { ConversationViewer } from "@/components/conversation-viewer"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { classifySupplier, getSupplierMetrics } from "@/lib/classification"
+import { useSubscription } from "@/components/subscription-provider"
 import type { Supplier, WhatsAppConversation } from "@/types/database"
 
 interface SupplierDetailProps {
@@ -95,6 +96,7 @@ function StatusText({ status }: { status: string }) {
 }
 
 export function SupplierDetail({ supplier, totalContractedAll, onRefresh, onArchive, onReactivate }: SupplierDetailProps) {
+  const { canSeeFinancials } = useSubscription()
   const [editOpen, setEditOpen] = useState(false)
   const [interactionOpen, setInteractionOpen] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
@@ -244,7 +246,7 @@ export function SupplierDetail({ supplier, totalContractedAll, onRefresh, onArch
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 ${canSeeFinancials ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
         <Card className="rounded-2xl border border-border/50 bg-white">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Capacidade</CardTitle>
@@ -330,18 +332,20 @@ export function SupplierDetail({ supplier, totalContractedAll, onRefresh, onArch
           </CardContent>
         </Card>
 
-        <Card className="rounded-2xl border border-border/50 bg-white">
-          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Último preço</CardTitle>
-            <UnitToggle unit={priceUnit} onChange={setPriceUnit} />
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {formatCurrency(convertPrice(supplier.last_price, supplier.avg_density, priceUnit))}
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">{priceUnitLabel(priceUnit)}</p>
-          </CardContent>
-        </Card>
+        {canSeeFinancials && (
+          <Card className="rounded-2xl border border-border/50 bg-white">
+            <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Último preço</CardTitle>
+              <UnitToggle unit={priceUnit} onChange={setPriceUnit} />
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold">
+                {formatCurrency(convertPrice(supplier.last_price, supplier.avg_density, priceUnit))}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">{priceUnitLabel(priceUnit)}</p>
+            </CardContent>
+          </Card>
+        )}
       </div>
       <div className="border-b border-black/[0.04]" />
 

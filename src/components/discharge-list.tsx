@@ -25,6 +25,7 @@ import {
 import { formatCurrency, convertVolume, convertPrice, unitLabel, priceUnitLabel } from "@/lib/utils"
 import type { VolumeUnit } from "@/lib/utils"
 import { UnitToggle } from "@/components/unit-toggle"
+import { useSubscription } from "@/components/subscription-provider"
 import type { Discharge } from "@/types/database"
 
 interface DischargeListProps {
@@ -67,6 +68,7 @@ function DensityBadge({ value }: { value: number | null }) {
 }
 
 export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
+  const { canSeeFinancials } = useSubscription()
   const [discharges, setDischarges] = useState<Discharge[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -195,7 +197,7 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
       <CardContent className="space-y-4">
         {/* Summary cards */}
         {totalCount > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className={`grid grid-cols-2 ${canSeeFinancials ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-3`}>
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground flex items-center gap-1">
                 <Truck className="h-3 w-3" />
@@ -223,12 +225,14 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                   : "—"}
               </p>
             </div>
-            <div className="rounded-lg border p-3">
-              <p className="text-xs text-muted-foreground">Valor total pago</p>
-              <p className="text-lg font-bold mt-1 text-[#1B4332]">
-                {formatCurrency(summary.totalPaid)}
-              </p>
-            </div>
+            {canSeeFinancials && (
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">Valor total pago</p>
+                <p className="text-lg font-bold mt-1 text-[#1B4332]">
+                  {formatCurrency(summary.totalPaid)}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
@@ -246,8 +250,8 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                     <TableHead>Data</TableHead>
                     <TableHead>Volume ({unitLabel(unit)})</TableHead>
                     <TableHead className="hidden sm:table-cell">Densidade</TableHead>
-                    <TableHead className="hidden md:table-cell">Preço ({priceUnitLabel(unit)})</TableHead>
-                    <TableHead>Valor a pagar</TableHead>
+                    {canSeeFinancials && <TableHead className="hidden md:table-cell">Preço ({priceUnitLabel(unit)})</TableHead>}
+                    {canSeeFinancials && <TableHead>Valor a pagar</TableHead>}
                     <TableHead className="hidden lg:table-cell">Placa</TableHead>
                     <TableHead className="w-10" />
                   </TableRow>
@@ -264,6 +268,7 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                           setExpandedId(isExpanded ? null : d.id)
                         }
                         unit={unit}
+                        showFinancials={canSeeFinancials}
                       />
                     )
                   })}
@@ -313,11 +318,13 @@ function ExpandableRow({
   isExpanded,
   onToggle,
   unit,
+  showFinancials,
 }: {
   discharge: Discharge
   isExpanded: boolean
   onToggle: () => void
   unit: VolumeUnit
+  showFinancials: boolean
 }) {
   return (
     <>
@@ -332,12 +339,16 @@ function ExpandableRow({
         <TableCell className="hidden sm:table-cell">
           <DensityBadge value={discharge.density_kg_mdc} />
         </TableCell>
-        <TableCell className="hidden md:table-cell">
-          {formatCurrency(convertPrice(discharge.price_per_mdc, discharge.density_kg_mdc, unit))}
-        </TableCell>
-        <TableCell className="font-medium text-[#1B4332]">
-          {formatCurrency(discharge.net_total)}
-        </TableCell>
+        {showFinancials && (
+          <TableCell className="hidden md:table-cell">
+            {formatCurrency(convertPrice(discharge.price_per_mdc, discharge.density_kg_mdc, unit))}
+          </TableCell>
+        )}
+        {showFinancials && (
+          <TableCell className="font-medium text-[#1B4332]">
+            {formatCurrency(discharge.net_total)}
+          </TableCell>
+        )}
         <TableCell className="hidden lg:table-cell">
           {discharge.truck_plate || "—"}
         </TableCell>
@@ -352,7 +363,7 @@ function ExpandableRow({
 
       {isExpanded && (
         <TableRow className="bg-muted/30 hover:bg-muted/30">
-          <TableCell colSpan={7} className="p-4">
+          <TableCell colSpan={showFinancials ? 7 : 5} className="p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
               <div>
                 <p className="text-xs text-muted-foreground">Peso bruto</p>
@@ -410,14 +421,16 @@ function ExpandableRow({
                   {discharge.forest_guide || "—"}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Descontos</p>
-                <p className="font-medium">
-                  {Number(discharge.deductions) > 0
-                    ? formatCurrency(discharge.deductions)
-                    : "—"}
-                </p>
-              </div>
+              {showFinancials && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Descontos</p>
+                  <p className="font-medium">
+                    {Number(discharge.deductions) > 0
+                      ? formatCurrency(discharge.deductions)
+                      : "—"}
+                  </p>
+                </div>
+              )}
               {discharge.notes && (
                 <div className="col-span-2 md:col-span-3">
                   <p className="text-xs text-muted-foreground">Observacoes</p>

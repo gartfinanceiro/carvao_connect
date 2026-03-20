@@ -71,17 +71,22 @@ export async function DELETE(request: Request) {
   }
 }
 
-// PATCH — Change member role
+// PATCH — Change member role and/or permissions
 export async function PATCH(request: Request) {
   try {
     const body = await request.json()
-    const { userId, newRole } = body as { userId: string; newRole: string }
-
-    if (!userId || !newRole) {
-      return NextResponse.json({ error: "userId e newRole são obrigatórios." }, { status: 400 })
+    const { userId, newRole, permissions, profileTemplate } = body as {
+      userId: string
+      newRole?: string
+      permissions?: Record<string, boolean> | null
+      profileTemplate?: string | null
     }
 
-    if (newRole !== "admin" && newRole !== "member") {
+    if (!userId) {
+      return NextResponse.json({ error: "userId é obrigatório." }, { status: 400 })
+    }
+
+    if (newRole && newRole !== "admin" && newRole !== "member") {
       return NextResponse.json({ error: "Role inválido." }, { status: 400 })
     }
 
@@ -117,7 +122,8 @@ export async function PATCH(request: Request) {
     }
 
     // Check if demoting last admin
-    if (targetProfile.role === "admin" && newRole === "member") {
+    const effectiveRole = newRole ?? targetProfile.role
+    if (targetProfile.role === "admin" && effectiveRole === "member") {
       const { count } = await adminClient
         .from("profiles")
         .select("id", { count: "exact", head: true })
@@ -129,13 +135,29 @@ export async function PATCH(request: Request) {
       }
     }
 
+    // Build update payload
+    const updateData: Record<string, unknown> = {}
+    if (newRole) updateData.role = newRole
+    if (permissions !== undefined) updateData.permissions = permissions
+    if (profileTemplate !== undefined) updateData.profile_template = profileTemplate
+
+    // Admin → clear permissions (admin always has full access)
+    if (effectiveRole === "admin") {
+      updateData.permissions = null
+      updateData.profile_template = null
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ error: "Nenhum campo para atualizar." }, { status: 400 })
+    }
+
     const { error } = await adminClient
       .from("profiles")
-      .update({ role: newRole })
+      .update(updateData)
       .eq("id", userId)
 
     if (error) {
-      return NextResponse.json({ error: "Erro ao atualizar role." }, { status: 500 })
+      return NextResponse.json({ error: "Erro ao atualizar membro." }, { status: 500 })
     }
 
     return NextResponse.json({ success: true })

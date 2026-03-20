@@ -14,6 +14,7 @@ import { queueStatusLabels, queueEntryTypeLabels } from "@/lib/labels"
 import { convertVolume, unitLabel } from "@/lib/utils"
 import type { VolumeUnit } from "@/lib/utils"
 import { UnitToggle } from "@/components/unit-toggle"
+import { AccessGate } from "@/components/access-gate"
 import type { QueueEntry, Supplier, QueueStatus, QueueEntryType } from "@/types/database"
 
 interface QueueEntryWithSupplier extends Omit<QueueEntry, 'suppliers'> {
@@ -22,6 +23,14 @@ interface QueueEntryWithSupplier extends Omit<QueueEntry, 'suppliers'> {
 }
 
 export default function FilaPage() {
+  return (
+    <AccessGate module="fila">
+      <FilaContent />
+    </AccessGate>
+  )
+}
+
+function FilaContent() {
   const [entries, setEntries] = useState<QueueEntryWithSupplier[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10))

@@ -61,6 +61,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: authError?.message || "Erro ao criar conta." }, { status: 500 })
     }
 
+    // Copy permissions from invite to profile (if member with permissions)
+    if (invite.role !== "admin" && invite.permissions) {
+      await supabase
+        .from("profiles")
+        .update({
+          permissions: invite.permissions,
+          profile_template: invite.profile_template,
+        })
+        .eq("id", authData.user.id)
+    }
+
     // Mark invite as accepted
     await supabase
       .from("invites")

@@ -8,11 +8,19 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
   Loader2, LogOut, MessageSquare, RefreshCw, CreditCard, ExternalLink, Lock,
-  Users, UserPlus, Copy, Check, MoreHorizontal, Shield, ShieldOff, UserMinus,
+  Users, UserPlus, Copy, Check, MoreHorizontal, Shield, ShieldOff, UserMinus, Settings,
 } from "lucide-react"
 import { toast } from "sonner"
 import { WhatsAppSetup } from "@/components/whatsapp-setup"
 import { useSubscription } from "@/components/subscription-provider"
+import {
+  PROFILE_TEMPLATES,
+  MODULE_LABELS,
+  MODULES,
+  type Permissions,
+  type ProfileTemplate,
+  type ModuleKey,
+} from "@/lib/permissions"
 
 interface ConfiguracoesClientProps {
   userName: string
@@ -54,6 +62,8 @@ export function ConfiguracoesClient({
     name: string
     role: string
     email?: string
+    permissions: Permissions | null
+    profile_template: ProfileTemplate | null
   }
   interface InviteItem {
     id: string
@@ -74,6 +84,16 @@ export function ConfiguracoesClient({
   const [copiedLink, setCopiedLink] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [supplierCount, setSupplierCount] = useState<number | null>(null)
+
+  // Permissions modal state
+  const [permModalOpen, setPermModalOpen] = useState(false)
+  const [permMember, setPermMember] = useState<TeamMember | null>(null)
+  const [permTemplate, setPermTemplate] = useState<ProfileTemplate | "custom">("completo")
+  const [permModules, setPermModules] = useState<Permissions>({ ...PROFILE_TEMPLATES.completo.permissions })
+  const [permSaving, setPermSaving] = useState(false)
+
+  // Invite profile state
+  const [inviteTemplate, setInviteTemplate] = useState<ProfileTemplate>("completo")
 
   async function handleSaveName() {
     if (!name.trim()) return
@@ -142,7 +162,7 @@ export function ConfiguracoesClient({
 
     const { data: profiles } = await supabase
       .from("profiles")
-      .select("id, name, role")
+      .select("id, name, role, permissions, profile_template")
       .order("created_at", { ascending: true })
 
     setMembers((profiles as TeamMember[]) ?? [])
@@ -176,7 +196,12 @@ export function ConfiguracoesClient({
       const res = await fetch("/api/invites", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.toLowerCase(), role: inviteRole }),
+        body: JSON.stringify({
+          email: inviteEmail.toLowerCase(),
+          role: inviteRole,
+          permissions: inviteRole === "member" ? PROFILE_TEMPLATES[inviteTemplate as Exclude<ProfileTemplate, "custom">]?.permissions ?? null : null,
+          profileTemplate: inviteRole === "member" ? inviteTemplate : null,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -223,6 +248,61 @@ export function ConfiguracoesClient({
       toast.success("Função atualizada")
       fetchTeam()
     }
+  }
+
+  function openPermModal(member: TeamMember) {
+    setPermMember(member)
+    const template = member.profile_template as ProfileTemplate | null
+    if (template && template !== "custom" && PROFILE_TEMPLATES[template]) {
+      setPermTemplate(template)
+      setPermModules({ ...PROFILE_TEMPLATES[template].permissions })
+    } else if (member.permissions) {
+      setPermTemplate("custom")
+      setPermModules({ ...member.permissions })
+    } else {
+      setPermTemplate("completo")
+      setPermModules({ ...PROFILE_TEMPLATES.completo.permissions })
+    }
+    setPermModalOpen(true)
+  }
+
+  function handleTemplateChange(template: ProfileTemplate | "custom") {
+    setPermTemplate(template)
+    if (template !== "custom" && PROFILE_TEMPLATES[template]) {
+      setPermModules({ ...PROFILE_TEMPLATES[template].permissions })
+    }
+  }
+
+  function handleModuleToggle(module: ModuleKey) {
+    setPermTemplate("custom")
+    setPermModules((prev) => ({ ...prev, [module]: !prev[module] }))
+  }
+
+  async function handleSavePermissions() {
+    if (!permMember) return
+    setPermSaving(true)
+    try {
+      const res = await fetch("/api/team/members", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: permMember.id,
+          permissions: permModules,
+          profileTemplate: permTemplate,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || "Erro ao salvar permissões.")
+      } else {
+        toast.success("Permissões atualizadas")
+        setPermModalOpen(false)
+        fetchTeam()
+      }
+    } catch {
+      toast.error("Erro de conexão.")
+    }
+    setPermSaving(false)
   }
 
   async function handleRemoveMember(userId: string, memberName: string) {
@@ -432,15 +512,35 @@ export function ConfiguracoesClient({
                             <span className="text-[10px] font-semibold bg-muted text-muted-foreground rounded px-1.5 py-0.5">Você</span>
                           )}
                         </div>
-                        <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 inline-block ${
-                          member.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-muted text-muted-foreground"
-                        }`}>
-                          {member.role === "admin" ? "Admin" : "Membro"}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[11px] font-semibold rounded-full px-2 py-0.5 inline-block ${
+                            member.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-muted text-muted-foreground"
+                          }`}>
+                            {member.role === "admin" ? "Admin" : "Membro"}
+                          </span>
+                          {member.role === "member" && member.profile_template && (
+                            <span className="text-[11px] font-medium text-muted-foreground bg-muted/50 rounded-full px-2 py-0.5">
+                              {member.profile_template === "custom"
+                                ? "Personalizado"
+                                : PROFILE_TEMPLATES[member.profile_template as Exclude<ProfileTemplate, "custom">]?.label ?? member.profile_template}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                     {isAdmin && member.id !== currentUserId && (
                       <div className="flex items-center gap-1">
+                        {member.role === "member" && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs text-muted-foreground"
+                            onClick={() => openPermModal(member)}
+                            title="Gerenciar permissões"
+                          >
+                            <Settings className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -515,7 +615,7 @@ export function ConfiguracoesClient({
                   <p className="text-[12px] text-muted-foreground leading-relaxed">
                     {inviteRole === "admin"
                       ? "Admin — acesso total: gerenciar equipe, billing, arquivar fornecedores e configurar WhatsApp."
-                      : "Membro — acesso operacional: cadastrar fornecedores, registrar interações, descargas e alertas."}
+                      : `Membro — perfil ${PROFILE_TEMPLATES[inviteTemplate as Exclude<ProfileTemplate, "custom">]?.label ?? inviteTemplate}: ${PROFILE_TEMPLATES[inviteTemplate as Exclude<ProfileTemplate, "custom">]?.description ?? ""}`}
                   </p>
                   <div className="flex gap-2">
                     <Input
@@ -527,12 +627,26 @@ export function ConfiguracoesClient({
                     />
                     <select
                       value={inviteRole}
-                      onChange={(e) => setInviteRole(e.target.value)}
+                      onChange={(e) => {
+                        setInviteRole(e.target.value)
+                        if (e.target.value === "admin") setInviteTemplate("completo")
+                      }}
                       className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                     >
                       <option value="member">Membro</option>
                       <option value="admin">Admin</option>
                     </select>
+                    {inviteRole === "member" && (
+                      <select
+                        value={inviteTemplate}
+                        onChange={(e) => setInviteTemplate(e.target.value as ProfileTemplate)}
+                        className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+                      >
+                        {Object.entries(PROFILE_TEMPLATES).map(([key, tmpl]) => (
+                          <option key={key} value={key}>{tmpl.label}</option>
+                        ))}
+                      </select>
+                    )}
                     <Button
                       size="sm"
                       className="bg-[#1B4332] hover:bg-[#2D6A4F] text-xs"
@@ -652,6 +766,98 @@ export function ConfiguracoesClient({
           Sair
         </Button>
       </section>
+
+      {/* Permissions Modal */}
+      {permModalOpen && permMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setPermModalOpen(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-6 space-y-5">
+              <div>
+                <h3 className="text-lg font-semibold">Permissões de {permMember.name}</h3>
+                <p className="text-xs text-muted-foreground mt-1">Escolha um perfil ou personalize os módulos</p>
+              </div>
+
+              {/* Template selector */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Perfil</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {(Object.entries(PROFILE_TEMPLATES) as [Exclude<ProfileTemplate, "custom">, typeof PROFILE_TEMPLATES[keyof typeof PROFILE_TEMPLATES]][]).map(([key, tmpl]) => (
+                    <button
+                      key={key}
+                      onClick={() => handleTemplateChange(key)}
+                      className={`text-left rounded-lg border p-3 transition-colors ${
+                        permTemplate === key
+                          ? "border-[#1B4332] bg-[#1B4332]/5"
+                          : "border-border hover:border-border/80"
+                      }`}
+                    >
+                      <p className="text-sm font-medium">{tmpl.label}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{tmpl.description}</p>
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => handleTemplateChange("custom")}
+                    className={`text-left rounded-lg border p-3 transition-colors ${
+                      permTemplate === "custom"
+                        ? "border-[#1B4332] bg-[#1B4332]/5"
+                        : "border-border hover:border-border/80"
+                    }`}
+                  >
+                    <p className="text-sm font-medium">Personalizado</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">Escolha módulo a módulo</p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Module toggles */}
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Módulos</p>
+                <div className="space-y-1">
+                  {MODULES.filter((m) => m !== "configuracoes").map((mod) => (
+                    <div
+                      key={mod}
+                      className="flex items-center justify-between rounded-lg px-3 py-2.5 hover:bg-muted/30 transition-colors"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{MODULE_LABELS[mod].label}</p>
+                        <p className="text-[11px] text-muted-foreground">{MODULE_LABELS[mod].description}</p>
+                      </div>
+                      <button
+                        onClick={() => handleModuleToggle(mod)}
+                        className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ${
+                          permModules[mod] ? "bg-[#1B4332]" : "bg-gray-200"
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 mt-0.5 ${
+                            permModules[mod] ? "translate-x-4 ml-0.5" : "translate-x-0.5"
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-black/[0.04]">
+                <Button variant="outline" size="sm" onClick={() => setPermModalOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  size="sm"
+                  className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+                  onClick={handleSavePermissions}
+                  disabled={permSaving}
+                >
+                  {permSaving && <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />}
+                  Salvar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

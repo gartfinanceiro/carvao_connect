@@ -8,9 +8,18 @@ import { ArrowLeft, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { SupplierDetail } from "@/components/supplier-detail"
 import { useSubscription } from "@/components/subscription-provider"
+import { AccessGate } from "@/components/access-gate"
 import type { Supplier } from "@/types/database"
 
 export default function SupplierDetailPage() {
+  return (
+    <AccessGate module="fornecedores">
+      <SupplierDetailContent />
+    </AccessGate>
+  )
+}
+
+function SupplierDetailContent() {
   const params = useParams()
   const router = useRouter()
   const { isAdmin } = useSubscription()

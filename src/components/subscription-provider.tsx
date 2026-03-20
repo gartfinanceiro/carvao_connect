@@ -1,7 +1,14 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react"
 import { createClient } from "@/lib/supabase/client"
+import {
+  hasModuleAccess,
+  canSeeFinancials as checkFinancials,
+  type ModuleKey,
+  type Permissions,
+  type ProfileTemplate,
+} from "@/lib/permissions"
 
 export interface SubscriptionInfo {
   organization_id: string
@@ -18,6 +25,8 @@ export interface SubscriptionInfo {
   has_stripe: boolean
   is_demo: boolean
   role: "admin" | "member"
+  permissions: Permissions | null
+  profile_template: ProfileTemplate | null
 }
 
 interface SubscriptionContextType {
@@ -26,6 +35,9 @@ interface SubscriptionContextType {
   isReadOnly: boolean
   isAdmin: boolean
   trialDaysLeft: number | null
+  permissions: Permissions | null
+  hasAccess: (module: ModuleKey) => boolean
+  canSeeFinancials: boolean
   refresh: () => Promise<void>
 }
 
@@ -35,6 +47,9 @@ const SubscriptionContext = createContext<SubscriptionContextType>({
   isReadOnly: false,
   isAdmin: false,
   trialDaysLeft: null,
+  permissions: null,
+  hasAccess: () => true,
+  canSeeFinancials: true,
   refresh: async () => {},
 })
 
@@ -54,20 +69,20 @@ export function SubscriptionProvider({
   )
   const [loading, setLoading] = useState(!initialData)
 
-  async function fetchSubscription() {
+  const fetchSubscription = useCallback(async () => {
     const supabase = createClient()
     const { data, error } = await supabase.rpc("get_my_subscription")
     if (!error && data) {
       setSubscription(data as unknown as SubscriptionInfo)
     }
     setLoading(false)
-  }
+  }, [])
 
   useEffect(() => {
     if (!initialData) {
       fetchSubscription()
     }
-  }, [initialData])
+  }, [initialData, fetchSubscription])
 
   // Calculate derived state
   const trialDaysLeft = (() => {
@@ -83,10 +98,8 @@ export function SubscriptionProvider({
 
     const { subscription_status, trial_ends_at } = subscription
 
-    // Canceled subscription
     if (subscription_status === "canceled") return true
 
-    // Expired trial
     if (
       subscription_status === "trialing" &&
       trial_ends_at &&
@@ -99,6 +112,13 @@ export function SubscriptionProvider({
   })()
 
   const isAdmin = subscription?.role === "admin" || subscription?.is_demo === true
+  const permissions = isAdmin ? null : (subscription?.permissions ?? null)
+  const canSeeFinancialsValue = checkFinancials(permissions)
+
+  const hasAccess = useCallback(
+    (module: ModuleKey) => hasModuleAccess(permissions, module),
+    [permissions]
+  )
 
   return (
     <SubscriptionContext.Provider
@@ -108,6 +128,9 @@ export function SubscriptionProvider({
         isReadOnly,
         isAdmin,
         trialDaysLeft,
+        permissions,
+        hasAccess,
+        canSeeFinancials: canSeeFinancialsValue,
         refresh: fetchSubscription,
       }}
     >

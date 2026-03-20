@@ -23,7 +23,12 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { email, role = "member" } = body as { email: string; role?: string }
+    const { email, role = "member", permissions = null, profileTemplate = null } = body as {
+      email: string
+      role?: string
+      permissions?: Record<string, boolean> | null
+      profileTemplate?: string | null
+    }
 
     if (!email) {
       return NextResponse.json({ error: "Email é obrigatório." }, { status: 400 })
@@ -78,6 +83,8 @@ export async function POST(request: Request) {
         organization_id: profile.organization_id,
         email: email.toLowerCase(),
         role,
+        permissions: role === "admin" ? null : permissions,
+        profile_template: role === "admin" ? null : profileTemplate,
         invited_by: user.id,
       })
       .select("id, token, email, role, expires_at")

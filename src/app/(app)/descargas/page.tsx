@@ -35,6 +35,8 @@ import type { VolumeUnit } from "@/lib/utils"
 import { UnitToggle } from "@/components/unit-toggle"
 import { DischargeForm } from "@/components/discharge-form"
 import { DischargeReportDialog } from "@/components/discharge-report-dialog"
+import { AccessGate } from "@/components/access-gate"
+import { useSubscription } from "@/components/subscription-provider"
 import type { Discharge, CharcoalType } from "@/types/database"
 
 const PAGE_SIZE = 20
@@ -71,6 +73,16 @@ type DischargeWithSupplier = Discharge & {
 }
 
 export default function DescargasPage() {
+  return (
+    <AccessGate module="descargas">
+      <DescargasContent />
+    </AccessGate>
+  )
+}
+
+function DescargasContent() {
+  const { canSeeFinancials, hasAccess } = useSubscription()
+  const showReports = hasAccess("relatorios")
   const defaultRange = useMemo(() => getDefaultDateRange(), [])
 
   const [discharges, setDischarges] = useState<DischargeWithSupplier[]>([])
@@ -285,13 +297,15 @@ export default function DescargasPage() {
         </div>
         <div className="flex items-center gap-2">
           <UnitToggle unit={unit} onChange={setUnit} />
-          <Button
-            variant="outline"
-            onClick={() => setReportOpen(true)}
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            Relatório
-          </Button>
+          {showReports && (
+            <Button
+              variant="outline"
+              onClick={() => setReportOpen(true)}
+            >
+              <FileText className="mr-2 h-4 w-4" />
+              Relatório
+            </Button>
+          )}
           <Button
             className="bg-[#1B4332] hover:bg-[#2D6A4F]"
             onClick={() => setFormOpen(true)}
@@ -303,7 +317,7 @@ export default function DescargasPage() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+      <div className={`grid grid-cols-2 ${canSeeFinancials ? "lg:grid-cols-4" : "lg:grid-cols-2"} gap-8`}>
         <div>
           <p className="text-xs text-muted-foreground tracking-wide">Volume no período</p>
           <p className="text-3xl font-semibold mt-0.5">
@@ -318,21 +332,25 @@ export default function DescargasPage() {
           </p>
           <p className="text-xs text-muted-foreground">kg/mdc</p>
         </div>
-        <div>
-          <p className="text-xs text-muted-foreground tracking-wide">Preço médio</p>
-          <p className="text-3xl font-semibold mt-0.5">
-            {kpiAvgPrice !== null
-              ? formatCurrency(kpiAvgPrice)
-              : "—"}
-          </p>
-          <p className="text-xs text-muted-foreground">{priceUnitLabel(unit)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-muted-foreground tracking-wide">Total pago</p>
-          <p className="text-3xl font-semibold mt-0.5 text-foreground">
-            {formatCurrency(summary.totalPaid)}
-          </p>
-        </div>
+        {canSeeFinancials && (
+          <div>
+            <p className="text-xs text-muted-foreground tracking-wide">Preço médio</p>
+            <p className="text-3xl font-semibold mt-0.5">
+              {kpiAvgPrice !== null
+                ? formatCurrency(kpiAvgPrice)
+                : "—"}
+            </p>
+            <p className="text-xs text-muted-foreground">{priceUnitLabel(unit)}</p>
+          </div>
+        )}
+        {canSeeFinancials && (
+          <div>
+            <p className="text-xs text-muted-foreground tracking-wide">Total pago</p>
+            <p className="text-3xl font-semibold mt-0.5 text-foreground">
+              {formatCurrency(summary.totalPaid)}
+            </p>
+          </div>
+        )}
       </div>
       <div className="border-b border-black/[0.04]" />
 
@@ -406,22 +424,30 @@ export default function DescargasPage() {
                   <SortableHeader column="density_kg_mdc" className="hidden sm:table-cell">
                     Densidade
                   </SortableHeader>
-                  <SortableHeader column="price_per_mdc" className="hidden md:table-cell">
-                    Preço ({priceUnitLabel(unit)})
-                  </SortableHeader>
+                  {canSeeFinancials && (
+                    <SortableHeader column="price_per_mdc" className="hidden md:table-cell">
+                      Preço ({priceUnitLabel(unit)})
+                    </SortableHeader>
+                  )}
                   <SortableHeader column="moisture_percent" className="hidden xl:table-cell">
                     Umidade
                   </SortableHeader>
                   <SortableHeader column="fines_percent" className="hidden xl:table-cell">
                     Moinha
                   </SortableHeader>
-                  <SortableHeader column="gross_total" className="hidden xl:table-cell">
-                    Bruto
-                  </SortableHeader>
-                  <SortableHeader column="deductions" className="hidden lg:table-cell">
-                    Descontos
-                  </SortableHeader>
-                  <SortableHeader column="net_total">Líquido</SortableHeader>
+                  {canSeeFinancials && (
+                    <SortableHeader column="gross_total" className="hidden xl:table-cell">
+                      Bruto
+                    </SortableHeader>
+                  )}
+                  {canSeeFinancials && (
+                    <SortableHeader column="deductions" className="hidden lg:table-cell">
+                      Descontos
+                    </SortableHeader>
+                  )}
+                  {canSeeFinancials && (
+                    <SortableHeader column="net_total">Líquido</SortableHeader>
+                  )}
                   <TableHead className="hidden lg:table-cell text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                     Placa
                   </TableHead>
@@ -450,6 +476,7 @@ export default function DescargasPage() {
                         isExpanded={isExpanded}
                         onToggle={() => setExpandedId(isExpanded ? null : d.id)}
                         unit={unit}
+                        showFinancials={canSeeFinancials}
                       />
                     )
                   })
@@ -515,11 +542,13 @@ function DischargeRow({
   isExpanded,
   onToggle,
   unit,
+  showFinancials,
 }: {
   discharge: DischargeWithSupplier
   isExpanded: boolean
   onToggle: () => void
   unit: VolumeUnit
+  showFinancials: boolean
 }) {
   const moisture = Number(d.moisture_percent)
   const finesPercent = Number(d.fines_percent)
@@ -550,24 +579,32 @@ function DischargeRow({
         <TableCell className="hidden sm:table-cell">
           <DensityText value={d.density_kg_mdc} />
         </TableCell>
-        <TableCell className="hidden md:table-cell text-sm tabular-nums">
-          {formatCurrency(convertPrice(d.price_per_mdc, d.density_kg_mdc, unit))}
-        </TableCell>
+        {showFinancials && (
+          <TableCell className="hidden md:table-cell text-sm tabular-nums">
+            {formatCurrency(convertPrice(d.price_per_mdc, d.density_kg_mdc, unit))}
+          </TableCell>
+        )}
         <TableCell className={`hidden xl:table-cell text-sm tabular-nums ${moisture > 5 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
           {moisture > 0 ? `${moisture}%` : "—"}
         </TableCell>
         <TableCell className={`hidden xl:table-cell text-sm tabular-nums ${finesPercent > 3 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
           {finesPercent > 0 ? `${finesPercent}%` : "—"}
         </TableCell>
-        <TableCell className="hidden xl:table-cell text-sm tabular-nums text-muted-foreground">
-          {d.gross_total ? formatCurrency(d.gross_total) : "—"}
-        </TableCell>
-        <TableCell className={`hidden lg:table-cell text-sm tabular-nums ${deductions > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
-          {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
-        </TableCell>
-        <TableCell className="font-medium text-sm text-[#1B4332] tabular-nums">
-          {formatCurrency(d.net_total)}
-        </TableCell>
+        {showFinancials && (
+          <TableCell className="hidden xl:table-cell text-sm tabular-nums text-muted-foreground">
+            {d.gross_total ? formatCurrency(d.gross_total) : "—"}
+          </TableCell>
+        )}
+        {showFinancials && (
+          <TableCell className={`hidden lg:table-cell text-sm tabular-nums ${deductions > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+            {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
+          </TableCell>
+        )}
+        {showFinancials && (
+          <TableCell className="font-medium text-sm text-[#1B4332] tabular-nums">
+            {formatCurrency(d.net_total)}
+          </TableCell>
+        )}
         <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground tracking-wider">
           {d.truck_plate || "—"}
         </TableCell>
@@ -624,20 +661,26 @@ function DischargeRow({
                     : "—"}
                 </p>
               </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Valor bruto</p>
-                <p className="font-medium">{d.gross_total ? formatCurrency(d.gross_total) : "—"}</p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Descontos</p>
-                <p className={`font-medium ${deductions > 0 ? "text-red-500" : ""}`}>
-                  {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Valor líquido</p>
-                <p className="font-medium text-[#1B4332]">{formatCurrency(d.net_total)}</p>
-              </div>
+              {showFinancials && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Valor bruto</p>
+                  <p className="font-medium">{d.gross_total ? formatCurrency(d.gross_total) : "—"}</p>
+                </div>
+              )}
+              {showFinancials && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Descontos</p>
+                  <p className={`font-medium ${deductions > 0 ? "text-red-500" : ""}`}>
+                    {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
+                  </p>
+                </div>
+              )}
+              {showFinancials && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Valor líquido</p>
+                  <p className="font-medium text-[#1B4332]">{formatCurrency(d.net_total)}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Nota Fiscal</p>
                 <p className="font-medium">{d.invoice_number || "—"}</p>

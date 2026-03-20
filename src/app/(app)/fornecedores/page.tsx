@@ -12,11 +12,20 @@ import { SupplierFilters } from "@/components/supplier-filters"
 import { SupplierForm } from "@/components/supplier-form"
 import { InteractionForm } from "@/components/interaction-form"
 import { useSubscription } from "@/components/subscription-provider"
+import { AccessGate } from "@/components/access-gate"
 import type { Supplier } from "@/types/database"
 
 const PAGE_SIZE = 20
 
 export default function FornecedoresPage() {
+  return (
+    <AccessGate module="fornecedores">
+      <FornecedoresContent />
+    </AccessGate>
+  )
+}
+
+function FornecedoresContent() {
   const router = useRouter()
   const { subscription, isReadOnly, isAdmin } = useSubscription()
   const [suppliers, setSuppliers] = useState<Supplier[]>([])

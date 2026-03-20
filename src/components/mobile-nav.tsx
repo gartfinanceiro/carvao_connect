@@ -2,23 +2,31 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { cn } from "@/lib/utils"
+import { useSubscription } from "@/components/subscription-provider"
+import type { ModuleKey } from "@/lib/permissions"
 import { LayoutDashboard, Users, Truck, ClipboardList, Settings } from "lucide-react"
 
-const NAV_ITEMS = [
-  { href: "/dashboard", label: "Início", icon: LayoutDashboard },
-  { href: "/fornecedores", label: "Fornecedores", icon: Users },
-  { href: "/descargas", label: "Descargas", icon: Truck },
-  { href: "/fila", label: "Fila", icon: ClipboardList },
-  { href: "/configuracoes", label: "Config", icon: Settings },
+const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; module: ModuleKey }[] = [
+  { href: "/dashboard", label: "Início", icon: LayoutDashboard, module: "feed" },
+  { href: "/fornecedores", label: "Fornecedores", icon: Users, module: "fornecedores" },
+  { href: "/descargas", label: "Descargas", icon: Truck, module: "descargas" },
+  { href: "/fila", label: "Fila", icon: ClipboardList, module: "fila" },
+  { href: "/configuracoes", label: "Config", icon: Settings, module: "configuracoes" },
 ]
 
 export function MobileNav() {
   const pathname = usePathname()
   const [alertCount, setAlertCount] = useState(0)
   const [queueCount, setQueueCount] = useState(0)
+  const { hasAccess } = useSubscription()
+
+  const visibleItems = useMemo(
+    () => NAV_ITEMS.filter((item) => hasAccess(item.module)),
+    [hasAccess]
+  )
 
   useEffect(() => {
     async function fetchCounts() {
@@ -47,7 +55,7 @@ export function MobileNav() {
   return (
     <nav className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-border/50">
       <div className="flex items-center justify-around h-14">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item) => {
           const Icon = item.icon
           const isActive =
             item.href === "/"
