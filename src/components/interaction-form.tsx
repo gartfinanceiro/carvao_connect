@@ -72,6 +72,10 @@ export function InteractionForm({
   const [nextStep, setNextStep] = useState<NextStepType | null>(defaultNextStep ?? null)
   const [nextStepDate, setNextStepDate] = useState<Date | undefined>(defaultNextStepDate)
   const [nextStepTime, setNextStepTime] = useState("09:00")
+  const [scheduleQueue, setScheduleQueue] = useState(false)
+  const [queueEntryType, setQueueEntryType] = useState<"fila" | "agendamento">("agendamento")
+  const [truckPlate, setTruckPlate] = useState("")
+  const [driverName, setDriverName] = useState("")
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
@@ -85,6 +89,10 @@ export function InteractionForm({
     setNextStep(defaultNextStep ?? null)
     setNextStepDate(defaultNextStepDate)
     setNextStepTime("09:00")
+    setScheduleQueue(false)
+    setQueueEntryType("agendamento")
+    setTruckPlate("")
+    setDriverName("")
     setErrors({})
   }
 
@@ -197,7 +205,36 @@ export function InteractionForm({
       onSuggestionLinked?.(insertedData.id)
     }
 
-    toast.success("Interação registrada!")
+    // Create queue entry if requested
+    if (scheduleQueue && loadPromised && promisedDate) {
+      const { error: queueError } = await supabase
+        .from("queue_entries")
+        .insert({
+          organization_id: organizationId,
+          supplier_id: supplierId,
+          entry_type: queueEntryType,
+          truck_plate: truckPlate || null,
+          driver_name: driverName || null,
+          estimated_volume_mdc: Number(promisedVolume),
+          scheduled_date: format(promisedDate, "yyyy-MM-dd"),
+          status: "aguardando" as const,
+          created_by: user.id,
+        })
+
+      if (queueError) {
+        toast.error("Interação registrada, mas erro ao agendar na fila.")
+        setLoading(false)
+        onOpenChange(false)
+        onSuccess()
+        return
+      }
+    }
+
+    toast.success(
+      scheduleQueue && loadPromised
+        ? "Interação registrada e carga agendada!"
+        : "Interação registrada!"
+    )
     setLoading(false)
     onOpenChange(false)
     onSuccess()
@@ -316,59 +353,114 @@ export function InteractionForm({
                   </label>
 
                   {loadPromised && (
-                    <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                      <div className="space-y-2">
-                        <Label>Quantidade (cargas)</Label>
-                        <Input
-                          type="number"
-                          value={promisedVolume}
-                          onChange={(e) => {
-                            setPromisedVolume(e.target.value)
-                            setErrors((prev) => ({ ...prev, promisedVolume: "" }))
-                          }}
-                          min={1}
-                          className={cn(errors.promisedVolume && "border-destructive")}
+                    <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label>Quantidade (cargas)</Label>
+                          <Input
+                            type="number"
+                            value={promisedVolume}
+                            onChange={(e) => {
+                              setPromisedVolume(e.target.value)
+                              setErrors((prev) => ({ ...prev, promisedVolume: "" }))
+                            }}
+                            min={1}
+                            className={cn(errors.promisedVolume && "border-destructive")}
+                          />
+                          {errors.promisedVolume && (
+                            <p className="text-xs text-destructive">
+                              {errors.promisedVolume}
+                            </p>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Data prevista</Label>
+                          <Popover>
+                            <PopoverTrigger
+                              className={cn(
+                                "flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-1 text-sm",
+                                errors.promisedDate && "border-destructive",
+                                !promisedDate && "text-muted-foreground"
+                              )}
+                            >
+                              {promisedDate
+                                ? format(promisedDate, "dd/MM/yyyy")
+                                : "Selecionar"}
+                              <CalendarIcon className="h-4 w-4 opacity-50" />
+                            </PopoverTrigger>
+                            <PopoverContent className="w-auto p-0" align="start">
+                              <Calendar
+                                mode="single"
+                                selected={promisedDate}
+                                onSelect={(date) => {
+                                  setPromisedDate(date ?? undefined)
+                                  setErrors((prev) => ({ ...prev, promisedDate: "" }))
+                                }}
+                                disabled={{ before: new Date() }}
+                                locale={ptBR}
+                              />
+                            </PopoverContent>
+                          </Popover>
+                          {errors.promisedDate && (
+                            <p className="text-xs text-destructive">
+                              {errors.promisedDate}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Schedule queue entry */}
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={scheduleQueue}
+                          onChange={(e) => setScheduleQueue(e.target.checked)}
+                          className="h-4 w-4 rounded border-gray-300 accent-[#1B4332]"
                         />
-                        {errors.promisedVolume && (
-                          <p className="text-xs text-destructive">
-                            {errors.promisedVolume}
-                          </p>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Data prevista</Label>
-                        <Popover>
-                          <PopoverTrigger
-                            className={cn(
-                              "flex h-9 w-full items-center justify-between rounded-md border bg-transparent px-3 py-1 text-sm",
-                              errors.promisedDate && "border-destructive",
-                              !promisedDate && "text-muted-foreground"
-                            )}
-                          >
-                            {promisedDate
-                              ? format(promisedDate, "dd/MM/yyyy")
-                              : "Selecionar"}
-                            <CalendarIcon className="h-4 w-4 opacity-50" />
-                          </PopoverTrigger>
-                          <PopoverContent className="w-auto p-0" align="start">
-                            <Calendar
-                              mode="single"
-                              selected={promisedDate}
-                              onSelect={(date) => {
-                                setPromisedDate(date ?? undefined)
-                                setErrors((prev) => ({ ...prev, promisedDate: "" }))
-                              }}
-                              disabled={{ before: new Date() }}
-                              locale={ptBR}
-                            />
-                          </PopoverContent>
-                        </Popover>
-                        {errors.promisedDate && (
-                          <p className="text-xs text-destructive">
-                            {errors.promisedDate}
-                          </p>
-                        )}
-                      </div>
+                        <span className="text-sm font-medium">Adicionar à fila de descargas?</span>
+                      </label>
+
+                      {scheduleQueue && (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                          <div className="flex gap-2">
+                            {(["fila", "agendamento"] as const).map((type) => (
+                              <button
+                                key={type}
+                                type="button"
+                                onClick={() => setQueueEntryType(type)}
+                                className={cn(
+                                  "flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                                  queueEntryType === type
+                                    ? "bg-[#1B4332] text-white"
+                                    : "bg-white border border-border hover:bg-muted"
+                                )}
+                              >
+                                {type === "fila" ? "Fila" : "Agendamento"}
+                              </button>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-2">
+                              <Label>Placa do caminhão (opcional)</Label>
+                              <Input
+                                type="text"
+                                value={truckPlate}
+                                onChange={(e) => setTruckPlate(e.target.value)}
+                                placeholder="ex: ABC1D23"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Motorista (opcional)</Label>
+                              <Input
+                                type="text"
+                                value={driverName}
+                                onChange={(e) => setDriverName(e.target.value)}
+                                placeholder="Nome do motorista"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

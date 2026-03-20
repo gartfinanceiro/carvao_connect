@@ -20,13 +20,28 @@ import {
 } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import type { QueueEntryType } from "@/types/database"
+import { queueStatusLabels } from "@/lib/labels"
+import type { QueueEntryType, QueueStatus } from "@/types/database"
 import type { Supplier } from "@/types/database"
+
+interface EditEntry {
+  id: string
+  entry_type: QueueEntryType
+  supplier_id: string
+  truck_plate: string | null
+  driver_name: string | null
+  estimated_volume_mdc: number | null
+  scheduled_date: string
+  scheduled_time: string | null
+  scheduled_position: number | null
+  status: string
+}
 
 interface QueueFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultType?: QueueEntryType
+  editEntry?: EditEntry | null
   onSuccess: () => void
 }
 
@@ -39,6 +54,7 @@ interface FormData {
   scheduled_date: string
   scheduled_time: string
   scheduled_position: string
+  status: QueueStatus
 }
 
 function getToday(): string {
@@ -55,6 +71,7 @@ function getInitialFormData(defaultType: QueueEntryType = "fila"): FormData {
     scheduled_date: getToday(),
     scheduled_time: "",
     scheduled_position: "",
+    status: "aguardando",
   }
 }
 
@@ -62,8 +79,10 @@ export function QueueForm({
   open,
   onOpenChange,
   defaultType = "fila",
+  editEntry,
   onSuccess,
 }: QueueFormProps) {
+  const isEditing = !!editEntry
   const [form, setForm] = useState<FormData>(getInitialFormData(defaultType))
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [loading, setLoading] = useState(false)
@@ -123,12 +142,26 @@ export function QueueForm({
   useEffect(() => {
     if (open) {
       fetchSuppliers()
-      setForm(getInitialFormData(defaultType))
+      if (editEntry) {
+        setForm({
+          entry_type: editEntry.entry_type,
+          supplier_id: editEntry.supplier_id,
+          truck_plate: editEntry.truck_plate || "",
+          driver_name: editEntry.driver_name || "",
+          estimated_volume_mdc: editEntry.estimated_volume_mdc ? String(editEntry.estimated_volume_mdc) : "",
+          scheduled_date: editEntry.scheduled_date,
+          scheduled_time: editEntry.scheduled_time || "",
+          scheduled_position: editEntry.scheduled_position ? String(editEntry.scheduled_position) : "",
+          status: editEntry.status as QueueStatus,
+        })
+      } else {
+        setForm(getInitialFormData(defaultType))
+      }
       setErrors({})
       setLastTruckPlate("")
       setAverageVolume(null)
     }
-  }, [open, fetchSuppliers, defaultType])
+  }, [open, fetchSuppliers, defaultType, editEntry])
 
   useEffect(() => {
     if (form.supplier_id) {
@@ -201,8 +234,7 @@ export function QueueForm({
         throw new Error("Organização não encontrada")
       }
 
-      const insertData = {
-        organization_id: orgData.organization_id,
+      const entryData = {
         supplier_id: form.supplier_id,
         entry_type: form.entry_type,
         truck_plate: form.truck_plate || null,
@@ -211,20 +243,30 @@ export function QueueForm({
         scheduled_date: form.scheduled_date,
         scheduled_time: form.entry_type === "agendamento" && form.scheduled_time ? form.scheduled_time : null,
         scheduled_position: form.entry_type === "agendamento" && form.scheduled_position ? Number(form.scheduled_position) : null,
-        queue_position: form.entry_type === "fila" ? null : null,
-        status: "aguardando" as const,
-        created_by: profile.user.id,
       }
 
-      const { error } = await supabase.from("queue_entries").insert([insertData])
-
-      if (error) throw error
-
-      toast.success(
-        form.entry_type === "fila"
-          ? "Entrada adicionada à fila com sucesso"
-          : "Descarga agendada com sucesso"
-      )
+      if (editEntry) {
+        const { error } = await supabase
+          .from("queue_entries")
+          .update({ ...entryData, status: form.status })
+          .eq("id", editEntry.id)
+        if (error) throw error
+        toast.success("Entrada atualizada com sucesso")
+      } else {
+        const { error } = await supabase.from("queue_entries").insert([{
+          ...entryData,
+          organization_id: orgData.organization_id,
+          queue_position: null,
+          status: "aguardando" as const,
+          created_by: profile.user.id,
+        }])
+        if (error) throw error
+        toast.success(
+          form.entry_type === "fila"
+            ? "Entrada adicionada à fila com sucesso"
+            : "Descarga agendada com sucesso"
+        )
+      }
       onOpenChange(false)
       onSuccess()
     } catch (err) {
@@ -242,7 +284,9 @@ export function QueueForm({
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {form.entry_type === "fila" ? "Adicionar à Fila" : "Agendar Descarga"}
+            {isEditing
+              ? "Editar entrada"
+              : form.entry_type === "fila" ? "Adicionar à Fila" : "Agendar Descarga"}
           </DialogTitle>
         </DialogHeader>
 
@@ -268,12 +312,44 @@ export function QueueForm({
             </div>
           </div>
 
+          {/* Status select (edit only) */}
+          {isEditing && (
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select
+                value={form.status}
+                onValueChange={(value) => updateField("status", value as QueueStatus)}
+              >
+                <SelectTrigger className="h-11 rounded-xl">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.entries(queueStatusLabels) as [QueueStatus, string][]).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           {/* Supplier select */}
           <div className="space-y-2">
             <Label htmlFor="supplier">Fornecedor</Label>
-            <Select value={form.supplier_id || undefined} onValueChange={(value) => updateField("supplier_id", value ?? "")}>
+            <Select value={form.supplier_id} onValueChange={(value) => updateField("supplier_id", value ?? "")}>
               <SelectTrigger id="supplier" className="h-11 rounded-xl">
-                <SelectValue placeholder="Selecione um fornecedor" />
+                <SelectValue placeholder="Selecione um fornecedor">
+                  {() => {
+                    if (selectedSupplier) {
+                      return `${selectedSupplier.name}${selectedSupplier.city ? ` - ${selectedSupplier.city}` : ""}`
+                    }
+                    if (form.supplier_id && loadingSuppliers) {
+                      return "Carregando..."
+                    }
+                    return null
+                  }}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {suppliers.map((supplier) => (
@@ -408,7 +484,9 @@ export function QueueForm({
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {form.entry_type === "fila" ? "Adicionar à fila" : "Agendar descarga"}
+              {isEditing
+                ? "Salvar alterações"
+                : form.entry_type === "fila" ? "Adicionar à fila" : "Agendar descarga"}
             </Button>
           </div>
         </form>

@@ -28,7 +28,11 @@ import {
   formatPhone,
   formatDocument,
   formatDate,
+  convertPrice,
+  priceUnitLabel,
 } from "@/lib/utils"
+import type { VolumeUnit } from "@/lib/utils"
+import { UnitToggle } from "@/components/unit-toggle"
 import { SupplierForm } from "@/components/supplier-form"
 import { InteractionForm } from "@/components/interaction-form"
 import { InteractionTimeline } from "@/components/interaction-timeline"
@@ -38,10 +42,12 @@ import { DischargeList } from "@/components/discharge-list"
 import { ConversationViewer } from "@/components/conversation-viewer"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { classifySupplier, getSupplierMetrics } from "@/lib/classification"
 import type { Supplier, WhatsAppConversation } from "@/types/database"
 
 interface SupplierDetailProps {
   supplier: Supplier
+  totalContractedAll: number
   onRefresh: () => void
   onArchive?: (supplier: Supplier) => void
   onReactivate?: (supplier: Supplier) => void
@@ -88,7 +94,7 @@ function StatusText({ status }: { status: string }) {
   }
 }
 
-export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }: SupplierDetailProps) {
+export function SupplierDetail({ supplier, totalContractedAll, onRefresh, onArchive, onReactivate }: SupplierDetailProps) {
   const [editOpen, setEditOpen] = useState(false)
   const [interactionOpen, setInteractionOpen] = useState(false)
   const [editingNotes, setEditingNotes] = useState(false)
@@ -102,6 +108,7 @@ export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }:
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([])
   const [conversationsLoading, setConversationsLoading] = useState(true)
   const [viewingConversationId, setViewingConversationId] = useState<string | null>(null)
+  const [priceUnit, setPriceUnit] = useState<VolumeUnit>("mdc")
 
   const fetchConversations = useCallback(async () => {
     setConversationsLoading(true)
@@ -144,6 +151,8 @@ export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }:
     supplier.monthly_capacity && supplier.monthly_capacity > 0
       ? (supplier.contracted_loads / supplier.monthly_capacity) * 100
       : 0
+  const classification = classifySupplier(supplier.monthly_capacity, supplier.contracted_loads, totalContractedAll)
+  const metrics = getSupplierMetrics(supplier.monthly_capacity, supplier.contracted_loads, totalContractedAll)
 
   async function handleCopyPhone(phone: string) {
     await navigator.clipboard.writeText(phone)
@@ -254,11 +263,24 @@ export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }:
                 style={{ width: `${Math.min(capacityPercentage, 100)}%` }}
               />
             </div>
-            {idle > 0 && (
-              <p className="mt-2 text-xs text-emerald-600 font-medium">
-                {idle} ociosa{idle > 1 ? "s" : ""}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-xs text-muted-foreground">
+              {idle > 0 && (
+                <span className="text-emerald-600 font-medium">
+                  {idle} ociosa{idle > 1 ? "s" : ""}
+                </span>
+              )}
+              <span>Aproveitamento: {metrics.utilization}%</span>
+              <span>·</span>
+              <span>Participação: {metrics.share}%</span>
+            </div>
+            <div className="mt-3 pt-3 border-t border-black/[0.04]">
+              <span className={`text-sm font-medium ${classification.color}`}>
+                {classification.label}
+              </span>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                {classification.actionHint}
               </p>
-            )}
+            </div>
           </CardContent>
         </Card>
 
@@ -311,15 +333,13 @@ export function SupplierDetail({ supplier, onRefresh, onArchive, onReactivate }:
         <Card className="rounded-2xl border border-border/50 bg-white">
           <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Último preço</CardTitle>
-            <div className="h-8 w-8 rounded-full bg-amber-100 flex items-center justify-center">
-              <DollarSign className="h-4 w-4 text-amber-600" />
-            </div>
+            <UnitToggle unit={priceUnit} onChange={setPriceUnit} />
           </CardHeader>
           <CardContent>
             <p className="text-3xl font-bold">
-              {formatCurrency(supplier.last_price)}
+              {formatCurrency(convertPrice(supplier.last_price, supplier.avg_density, priceUnit))}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">/mdc</p>
+            <p className="text-xs text-muted-foreground mt-1">{priceUnitLabel(priceUnit)}</p>
           </CardContent>
         </Card>
       </div>

@@ -82,8 +82,40 @@ export function validatePhone(phone: string): boolean {
   return digits.length >= 10
 }
 
-export function mdcToToneladas(volumeMdc: number, densityKgMdc: number | null): string | null {
-  if (!densityKgMdc || densityKgMdc <= 0) return null
-  const toneladas = (volumeMdc * densityKgMdc) / 1000
-  return toneladas.toFixed(1)
+export type VolumeUnit = "mdc" | "ton"
+
+export function convertVolume(
+  volumeMdc: number,
+  densityKgMdc: number | null,
+  unit: VolumeUnit,
+): number {
+  if (unit === "mdc" || !densityKgMdc || densityKgMdc <= 0) return volumeMdc
+  return Math.round((volumeMdc * densityKgMdc) / 1000 * 10) / 10
+}
+
+export function convertPrice(
+  pricePerMdc: number | null,
+  densityKgMdc: number | null,
+  unit: VolumeUnit,
+): number | null {
+  if (pricePerMdc === null || pricePerMdc === undefined) return null
+  if (unit === "mdc" || !densityKgMdc || densityKgMdc <= 0) return pricePerMdc
+  return Math.round((pricePerMdc * 1000) / densityKgMdc * 100) / 100
+}
+
+export function formatVolume(
+  volumeMdc: number,
+  densityKgMdc: number | null,
+  unit: VolumeUnit,
+): string {
+  const value = convertVolume(volumeMdc, densityKgMdc, unit)
+  return `${value.toLocaleString("pt-BR")} ${unit === "mdc" ? "MDC" : "ton"}`
+}
+
+export function unitLabel(unit: VolumeUnit): string {
+  return unit === "mdc" ? "MDC" : "ton"
+}
+
+export function priceUnitLabel(unit: VolumeUnit): string {
+  return unit === "mdc" ? "/mdc" : "/ton"
 }

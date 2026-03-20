@@ -32,6 +32,7 @@ export default function FornecedoresPage() {
   const [docStatus, setDocStatus] = useState("all")
   const [status, setStatus] = useState("all")
   const [uf, setUf] = useState("all")
+  const [porte, setPorte] = useState("all")
 
   // Form dialog
   const [formOpen, setFormOpen] = useState(false)
@@ -42,6 +43,9 @@ export default function FornecedoresPage() {
 
   // Plan limit info
   const [limitInfo, setLimitInfo] = useState<{ current: number; max: number } | null>(null)
+
+  // Total contracted across all active suppliers (for classification)
+  const [totalContractedAll, setTotalContractedAll] = useState(0)
 
   // Interaction dialog
   const [interactionOpen, setInteractionOpen] = useState(false)
@@ -97,21 +101,32 @@ export default function FornecedoresPage() {
     fetchSuppliers()
   }, [fetchSuppliers])
 
-  // Fetch plan limit info
+  // Fetch plan limit info + total contracted loads for classification
   useEffect(() => {
-    async function fetchLimit() {
+    async function fetchMeta() {
       const supabase = createClient()
-      const { data } = await supabase.rpc("check_plan_limit", { p_resource: "suppliers" })
-      const info = data as unknown as { current: number; max: number } | null
+      const [limitResult, contractedResult] = await Promise.all([
+        supabase.rpc("check_plan_limit", { p_resource: "suppliers" }),
+        supabase
+          .from("suppliers")
+          .select("contracted_loads")
+          .neq("status", "arquivado"),
+      ])
+      const info = limitResult.data as unknown as { current: number; max: number } | null
       if (info) setLimitInfo(info)
+      const total = (contractedResult.data ?? []).reduce(
+        (sum: number, s: { contracted_loads: number }) => sum + (s.contracted_loads ?? 0),
+        0,
+      )
+      setTotalContractedAll(total)
     }
-    fetchLimit()
+    fetchMeta()
   }, [suppliers])
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setPage(1)
-  }, [search, personType, docStatus, status, uf, viewMode])
+  }, [search, personType, docStatus, status, uf, porte, viewMode])
 
   function handleSort(column: string) {
     if (sortColumn === column) {
@@ -305,10 +320,12 @@ export default function FornecedoresPage() {
         docStatus={docStatus}
         status={status}
         uf={uf}
+        porte={porte}
         onPersonTypeChange={setPersonType}
         onDocStatusChange={setDocStatus}
         onStatusChange={setStatus}
         onUfChange={setUf}
+        onPorteChange={setPorte}
       />
 
       {/* Table */}
@@ -324,6 +341,8 @@ export default function FornecedoresPage() {
           pageSize={PAGE_SIZE}
           sortColumn={sortColumn}
           sortDirection={sortDirection}
+          porteFilter={porte}
+          totalContractedAll={totalContractedAll}
           onSort={handleSort}
           onPageChange={setPage}
           onNewInteraction={handleNewInteraction}

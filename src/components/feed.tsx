@@ -16,6 +16,9 @@ import { QueueForm } from "@/components/queue-form"
 import { MessageSquare, UserPlus, Phone, CalendarClock, Truck } from "lucide-react"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
+import { convertVolume, unitLabel } from "@/lib/utils"
+import type { VolumeUnit } from "@/lib/utils"
+import { UnitToggle } from "@/components/unit-toggle"
 import type { ContactType, ContactResult, NextStepType } from "@/types/database"
 
 interface FeedProps {
@@ -38,8 +41,13 @@ export function Feed({ userName }: FeedProps) {
   const [doneExpanded, setDoneExpanded] = useState(false)
 
   // KPI data
-  const [loadsNext7d, setLoadsNext7d] = useState(0)
+  const [queueToday, setQueueToday] = useState(0)
+  const [queueWeek, setQueueWeek] = useState(0)
   const [dischargesWeekVolume, setDischargesWeekVolume] = useState(0)
+  const [dischargesMonthVolume, setDischargesMonthVolume] = useState(0)
+  const [dischargesWeekRaw, setDischargesWeekRaw] = useState<{ volume_mdc: number; density_kg_mdc: number | null }[]>([])
+  const [dischargesMonthRaw, setDischargesMonthRaw] = useState<{ volume_mdc: number; density_kg_mdc: number | null }[]>([])
+  const [unit, setUnit] = useState<VolumeUnit>("mdc")
 
   // Interaction form
   const [interactionOpen, setInteractionOpen] = useState(false)
@@ -55,6 +63,9 @@ export function Feed({ userName }: FeedProps) {
   const [quickInteractionOpen, setQuickInteractionOpen] = useState(false)
   const [quickDischargeOpen, setQuickDischargeOpen] = useState(false)
   const [quickQueueOpen, setQuickQueueOpen] = useState(false)
+
+  // Activity feed refresh
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0)
 
   // AI Suggestions
   const [suggestions, setSuggestions] = useState<SuggestionWithSupplier[]>([])
@@ -88,9 +99,14 @@ export function Feed({ userName }: FeedProps) {
     const weekStart = new Date(todayStart)
     weekStart.setDate(weekStart.getDate() - weekStart.getDay())
     const weekStartStr = weekStart.toISOString().split("T")[0]
+    const weekEndDate = new Date(weekStart)
+    weekEndDate.setDate(weekEndDate.getDate() + 6)
+    const weekEndStr = weekEndDate.toISOString().split("T")[0]
     const todayDateStr = todayStart.toISOString().split("T")[0]
+    const monthStart = new Date(todayStart.getFullYear(), todayStart.getMonth(), 1)
+    const monthStartStr = monthStart.toISOString().split("T")[0]
 
-    const [pendingResult, doneResult, loadsResult, dischargesWeekResult, suggestionsResult] = await Promise.all([
+    const [pendingResult, doneResult, queueTodayResult, queueWeekResult, dischargesWeekResult, dischargesMonthResult, suggestionsResult] = await Promise.all([
       supabase
         .from("alerts")
         .select("*, supplier:suppliers (id, name, phones)")
@@ -104,15 +120,25 @@ export function Feed({ userName }: FeedProps) {
         .order("updated_at", { ascending: false })
         .limit(20),
       supabase
-        .from("interactions")
-        .select("promised_volume")
-        .eq("load_promised", true)
-        .gte("promised_date", todayStart.toISOString().split("T")[0])
-        .lte("promised_date", in7days.toISOString().split("T")[0]),
+        .from("queue_entries")
+        .select("id", { count: "exact", head: true })
+        .eq("scheduled_date", todayDateStr)
+        .neq("status", "cancelado"),
+      supabase
+        .from("queue_entries")
+        .select("id", { count: "exact", head: true })
+        .gte("scheduled_date", weekStartStr)
+        .lte("scheduled_date", weekEndStr)
+        .neq("status", "cancelado"),
       supabase
         .from("discharges")
-        .select("volume_mdc")
+        .select("volume_mdc, density_kg_mdc")
         .gte("discharge_date", weekStartStr)
+        .lte("discharge_date", todayDateStr),
+      supabase
+        .from("discharges")
+        .select("volume_mdc, density_kg_mdc")
+        .gte("discharge_date", monthStartStr)
         .lte("discharge_date", todayDateStr),
       supabase
         .from("ai_suggestions")
@@ -142,11 +168,23 @@ export function Feed({ userName }: FeedProps) {
     setTodayAlerts(todayList)
     setUpcoming(upcomingList)
     setDoneToday((doneResult.data as AlertWithSupplier[]) ?? [])
-    setLoadsNext7d(
-      loadsResult.data?.reduce((sum, i) => sum + (i.promised_volume ?? 0), 0) ?? 0
-    )
+    setQueueToday(queueTodayResult.count ?? 0)
+    setQueueWeek(queueWeekResult.count ?? 0)
+    const weekRaw = (dischargesWeekResult.data ?? []).map((d: { volume_mdc: number; density_kg_mdc: number | null }) => ({
+      volume_mdc: Number(d.volume_mdc),
+      density_kg_mdc: d.density_kg_mdc,
+    }))
+    const monthRaw = (dischargesMonthResult.data ?? []).map((d: { volume_mdc: number; density_kg_mdc: number | null }) => ({
+      volume_mdc: Number(d.volume_mdc),
+      density_kg_mdc: d.density_kg_mdc,
+    }))
+    setDischargesWeekRaw(weekRaw)
+    setDischargesMonthRaw(monthRaw)
     setDischargesWeekVolume(
-      dischargesWeekResult.data?.reduce((sum, d) => sum + Number(d.volume_mdc), 0) ?? 0
+      weekRaw.reduce((sum: number, d) => sum + d.volume_mdc, 0)
+    )
+    setDischargesMonthVolume(
+      monthRaw.reduce((sum: number, d) => sum + d.volume_mdc, 0)
     )
     setSuggestions((suggestionsResult.data as SuggestionWithSupplier[]) ?? [])
     setLoading(false)
@@ -211,6 +249,7 @@ export function Feed({ userName }: FeedProps) {
       toast.success("Alerta concluído")
     }
     fetchAlerts()
+    setActivityRefreshKey((k) => k + 1)
   }
 
   function handleRegisterDischarge(supplierId: string, interactionId?: string) {
@@ -221,6 +260,7 @@ export function Feed({ userName }: FeedProps) {
 
   function handleDischargeSuccess() {
     fetchAlerts()
+    setActivityRefreshKey((k) => k + 1)
   }
 
   function buildFormDefaults(s: SuggestionWithSupplier) {
@@ -270,6 +310,7 @@ export function Feed({ userName }: FeedProps) {
     setActiveSuggestion(null)
     setFormDefaults(null)
     fetchAlerts()
+    setActivityRefreshKey((k) => k + 1)
   }
 
   const todayDate = format(new Date(), "d 'de' MMMM, yyyy", { locale: ptBR })
@@ -302,8 +343,8 @@ export function Feed({ userName }: FeedProps) {
           <div className="h-8 w-64 bg-muted rounded-lg animate-pulse" />
           <div className="h-5 w-40 bg-muted rounded-lg animate-pulse" />
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => (
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="h-24 bg-muted rounded-2xl animate-pulse" />
           ))}
         </div>
@@ -359,20 +400,34 @@ export function Feed({ userName }: FeedProps) {
 
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        {[
-          { label: "Atrasados", value: overdue.length, color: overdue.length > 0 ? "text-red-600" : "text-foreground" },
-          { label: "Hoje", value: todayAlerts.length, color: todayAlerts.length > 0 ? "text-amber-600" : "text-foreground" },
-          { label: "Cargas 7d", value: loadsNext7d, color: "text-foreground" },
-          { label: "Descargas semana", value: dischargesWeekVolume.toLocaleString("pt-BR"), color: "text-foreground" },
-        ].map((stat) => (
-          <div key={stat.label} className="p-5 rounded-2xl border border-border bg-white" style={{ boxShadow: "var(--shadow-card)" }}>
-            <p className="text-[13px] font-medium text-muted-foreground">{stat.label}</p>
-            <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${stat.color}`}>
-              {stat.value}
-            </p>
-          </div>
-        ))}
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs text-muted-foreground font-medium">Resumo</span>
+        <UnitToggle unit={unit} onChange={setUnit} />
+      </div>
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+        {(() => {
+          const weekVol = unit === "mdc"
+            ? dischargesWeekVolume
+            : dischargesWeekRaw.reduce((sum, d) => sum + convertVolume(d.volume_mdc, d.density_kg_mdc, unit), 0)
+          const monthVol = unit === "mdc"
+            ? dischargesMonthVolume
+            : dischargesMonthRaw.reduce((sum, d) => sum + convertVolume(d.volume_mdc, d.density_kg_mdc, unit), 0)
+          return [
+            { label: "Alertas atrasados", value: String(overdue.length), sub: null as string | null, color: overdue.length > 0 ? "text-red-600" : "text-foreground" },
+            { label: "Alertas hoje", value: String(todayAlerts.length), sub: null as string | null, color: todayAlerts.length > 0 ? "text-amber-600" : "text-foreground" },
+            { label: "Cargas agendadas hoje", value: String(queueToday), sub: `${queueWeek} agendadas na semana`, color: "text-foreground" },
+            { label: "Descargas semana", value: (Math.round(weekVol * 10) / 10).toLocaleString("pt-BR"), sub: unitLabel(unit), color: "text-foreground" },
+            { label: "Descargas mês", value: (Math.round(monthVol * 10) / 10).toLocaleString("pt-BR"), sub: unitLabel(unit), color: "text-foreground" },
+          ].map((stat) => (
+            <div key={stat.label} className="p-5 rounded-2xl border border-border bg-white" style={{ boxShadow: "var(--shadow-card)" }}>
+              <p className="text-[13px] font-medium text-muted-foreground">{stat.label}</p>
+              <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${stat.color}`}>
+                {stat.value}
+              </p>
+              {stat.sub && <p className="text-[12px] text-muted-foreground mt-0.5">{stat.sub}</p>}
+            </div>
+          ))
+        })()}
       </div>
 
       {/* Two Column Layout */}
@@ -465,7 +520,7 @@ export function Feed({ userName }: FeedProps) {
         {/* RIGHT: Activity Timeline */}
         <div>
           <h2 className="text-[16px] font-bold text-foreground mb-4">Atividade recente</h2>
-          <ActivityFeed />
+          <ActivityFeed refreshKey={activityRefreshKey} />
         </div>
       </div>
 
@@ -491,7 +546,7 @@ export function Feed({ userName }: FeedProps) {
       <QuickInteraction
         open={quickInteractionOpen}
         onOpenChange={setQuickInteractionOpen}
-        onSuccess={fetchAlerts}
+        onSuccess={() => { fetchAlerts(); setActivityRefreshKey((k) => k + 1) }}
       />
 
       {/* Quick action: Schedule supplier */}
@@ -499,7 +554,7 @@ export function Feed({ userName }: FeedProps) {
         open={quickQueueOpen}
         onOpenChange={setQuickQueueOpen}
         defaultType="agendamento"
-        onSuccess={fetchAlerts}
+        onSuccess={() => { fetchAlerts(); setActivityRefreshKey((k) => k + 1) }}
       />
 
       {/* Quick action: New Supplier */}
@@ -513,7 +568,7 @@ export function Feed({ userName }: FeedProps) {
       <DischargeForm
         open={quickDischargeOpen}
         onOpenChange={setQuickDischargeOpen}
-        onSuccess={() => { fetchAlerts() }}
+        onSuccess={() => { fetchAlerts(); setActivityRefreshKey((k) => k + 1) }}
       />
 
       {formDefaults && (

@@ -134,7 +134,8 @@ export async function POST(request: Request) {
       orgId: org.id,
     })
   } catch (err) {
-    console.error("[register] Error:", err)
+    const message = err instanceof Error ? err.message : String(err)
+    console.error("[register] Error:", message)
     return NextResponse.json(
       { error: "Erro interno do servidor." },
       { status: 500 }

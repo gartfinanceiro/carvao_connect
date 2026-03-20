@@ -22,6 +22,9 @@ interface ActivityItem {
   suppliers: {
     name: string
   } | null
+  profiles: {
+    name: string
+  } | null
 }
 
 const contactIcons: Record<ContactType, typeof Phone> = {
@@ -33,7 +36,7 @@ const contactIcons: Record<ContactType, typeof Phone> = {
 
 const PAGE_SIZE = 15
 
-export function ActivityFeed() {
+export function ActivityFeed({ refreshKey }: { refreshKey?: number }) {
   const [items, setItems] = useState<ActivityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -58,7 +61,7 @@ export function ActivityFeed() {
     // Simple query — only join suppliers (which has a FK)
     let query = supabase
       .from("interactions")
-      .select("id, supplier_id, contact_type, result, notes, load_promised, promised_volume, promised_date, created_at, suppliers(name)")
+      .select("id, supplier_id, contact_type, result, notes, load_promised, promised_volume, promised_date, created_at, suppliers(name), profiles:user_id(name)")
       .order("created_at", { ascending: false })
       .range(from, to)
 
@@ -90,6 +93,13 @@ export function ActivityFeed() {
     setPage(0)
     fetchItems(0, debouncedSearch, false)
   }, [debouncedSearch, fetchItems])
+
+  useEffect(() => {
+    if (refreshKey !== undefined && refreshKey > 0) {
+      setPage(0)
+      fetchItems(0, debouncedSearch, false)
+    }
+  }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleLoadMore() {
     const nextPage = page + 1
@@ -132,6 +142,7 @@ export function ActivityFeed() {
             const Icon = contactIcons[item.contact_type]
             const resultClass = contactResultColors[item.result]
             const supplierName = item.suppliers?.name ?? "Fornecedor"
+            const userName = item.profiles?.name
             return (
               <div
                 key={item.id}
@@ -176,6 +187,14 @@ export function ActivityFeed() {
                     )}
 
                     <div className="flex items-center gap-3 mt-2.5">
+                      {userName && (
+                        <>
+                          <span className="text-[12px] font-medium text-[#737373]">
+                            {userName}
+                          </span>
+                          <span className="text-[12px] text-[#D5D5D5]">·</span>
+                        </>
+                      )}
                       <span className="text-[12px] text-[#999]">
                         {formatRelativeDate(item.created_at)}
                       </span>

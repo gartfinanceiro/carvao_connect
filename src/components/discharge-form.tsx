@@ -179,6 +179,55 @@ export function DischargeForm({
     return null
   }, [grossTotal, deductions])
 
+  // Auto-suggestion for deductions based on moisture/fines
+  const [lastSuggestion, setLastSuggestion] = useState<number | null>(null)
+
+  const suggestion = useMemo(() => {
+    const moistureVal = Number(form.moisture_percent) || 0
+    const finesKgVal = Number(form.fines_kg) || 0
+    const netWeightVal = Number(form.net_weight_kg) || 0
+    const vol = Number(form.volume_mdc) || 0
+    const priceVal = Number(form.price_per_mdc) || 0
+
+    if (vol <= 0 || priceVal <= 0) return null
+
+    let moistureDeduction = 0
+    let finesDeduction = 0
+    const parts: string[] = []
+    const gross = vol * priceVal
+
+    if (moistureVal > 5) {
+      moistureDeduction = Math.round(((moistureVal - 5) * gross) / 100 * 100) / 100
+      parts.push(`Umidade ${moistureVal}%: -R$ ${moistureDeduction.toFixed(2)}`)
+    }
+
+    if (netWeightVal > 0 && finesKgVal > 0) {
+      const fp = (finesKgVal / netWeightVal) * 100
+      if (fp > 3) {
+        finesDeduction = Math.round(((fp - 3) * gross) / 100 * 100) / 100
+        parts.push(`Moinha ${fp.toFixed(1)}%: -R$ ${finesDeduction.toFixed(2)}`)
+      }
+    }
+
+    const total = Math.round((moistureDeduction + finesDeduction) * 100) / 100
+    return {
+      total,
+      breakdown: parts.length > 0 ? parts.join(" · ") : "Sem descontos aplicáveis",
+      hasSuggestion: total > 0,
+    }
+  }, [form.moisture_percent, form.fines_kg, form.net_weight_kg, form.volume_mdc, form.price_per_mdc])
+
+  // Auto-fill deductions when suggestion changes and user hasn't manually edited
+  useEffect(() => {
+    if (!suggestion || !suggestion.hasSuggestion) return
+    const currentDeductions = Number(form.deductions) || 0
+    // Auto-fill if deductions is 0 or matches the last suggestion
+    if (currentDeductions === 0 || currentDeductions === lastSuggestion) {
+      setForm(prev => ({ ...prev, deductions: String(suggestion.total) }))
+      setLastSuggestion(suggestion.total)
+    }
+  }, [suggestion]) // eslint-disable-line react-hooks/exhaustive-deps
+
   function validate(): boolean {
     const newErrors: Partial<Record<keyof FormData, string>> = {}
 
@@ -495,12 +544,37 @@ export function DischargeForm({
                   <Input
                     type="number"
                     value={form.deductions}
-                    onChange={(e) => updateField("deductions", e.target.value)}
+                    onChange={(e) => {
+                      updateField("deductions", e.target.value)
+                      setLastSuggestion(null)
+                    }}
                     className="w-32 text-right"
                     step="0.01"
                     min={0}
                   />
                 </div>
+                {suggestion && suggestion.hasSuggestion && Number(form.deductions) !== suggestion.total && (
+                  <div className="bg-amber-50/50 border border-amber-200/30 rounded-lg p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs text-amber-700">
+                        Sugestão: {suggestion.breakdown} = R$ {suggestion.total.toFixed(2)}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setForm(prev => ({ ...prev, deductions: String(suggestion.total) }))
+                          setLastSuggestion(suggestion.total)
+                        }}
+                        className="text-xs text-amber-700 font-medium underline whitespace-nowrap hover:text-amber-800"
+                      >
+                        Aplicar
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {suggestion && !suggestion.hasSuggestion && (Number(form.moisture_percent) > 0 || Number(form.fines_kg) > 0) && (
+                  <p className="text-xs text-muted-foreground">Sem descontos aplicáveis (umidade ≤ 5% e moinha ≤ 3%)</p>
+                )}
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="font-semibold text-[#1B4332]">Valor a pagar</span>
                   <span className="text-xl font-bold text-[#1B4332]">

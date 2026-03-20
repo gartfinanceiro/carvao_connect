@@ -8,6 +8,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { docStatusLabels, supplierStatusLabels, personTypeLabels, UF_OPTIONS } from "@/lib/labels"
+import { classificationFilterOptions } from "@/lib/classification"
 import type { DocStatus, PersonType, SupplierStatus } from "@/types/database"
 
 interface SupplierFiltersProps {
@@ -15,10 +16,12 @@ interface SupplierFiltersProps {
   docStatus: string
   status: string
   uf: string
+  porte: string
   onPersonTypeChange: (value: string) => void
   onDocStatusChange: (value: string) => void
   onStatusChange: (value: string) => void
   onUfChange: (value: string) => void
+  onPorteChange: (value: string) => void
 }
 
 export function SupplierFilters({
@@ -26,10 +29,12 @@ export function SupplierFilters({
   docStatus,
   status,
   uf,
+  porte,
   onPersonTypeChange,
   onDocStatusChange,
   onStatusChange,
   onUfChange,
+  onPorteChange,
 }: SupplierFiltersProps) {
   const personTypeValueLabel: Record<string, string> = {
     all: "PF / PJ",
@@ -47,6 +52,9 @@ export function SupplierFilters({
     all: "Todas UFs",
     ...Object.fromEntries(UF_OPTIONS.map((u) => [u, u])),
   }
+  const porteValueLabel: Record<string, string> = Object.fromEntries(
+    classificationFilterOptions.map((o) => [o.value, o.label])
+  )
 
   return (
     <div className="flex flex-wrap gap-3">
@@ -115,6 +123,21 @@ export function SupplierFilters({
           {UF_OPTIONS.map((ufOption) => (
             <SelectItem key={ufOption} value={ufOption}>
               {ufOption}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select value={porte} onValueChange={(v) => onPorteChange(v ?? "all")}>
+        <SelectTrigger className="w-[160px]">
+          <SelectValue placeholder="Porte">
+            {(value: string) => porteValueLabel[value] ?? value}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {classificationFilterOptions.map((opt) => (
+            <SelectItem key={opt.value} value={opt.value}>
+              {opt.label}
             </SelectItem>
           ))}
         </SelectContent>

@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState, useCallback, useMemo } from "react"
-import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,10 +25,16 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  FileText,
 } from "lucide-react"
 import { charcoalTypeLabels } from "@/lib/labels"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, convertVolume, convertPrice, unitLabel, priceUnitLabel } from "@/lib/utils"
+import type { VolumeUnit } from "@/lib/utils"
+import { UnitToggle } from "@/components/unit-toggle"
 import { DischargeForm } from "@/components/discharge-form"
+import { DischargeReportDialog } from "@/components/discharge-report-dialog"
 import type { Discharge, CharcoalType } from "@/types/database"
 
 const PAGE_SIZE = 20
@@ -62,10 +67,10 @@ function DensityText({ value }: { value: number | null }) {
 
 type DischargeWithSupplier = Discharge & {
   supplier: { name: string }
+  creator: { name: string } | null
 }
 
 export default function DescargasPage() {
-  const router = useRouter()
   const defaultRange = useMemo(() => getDefaultDateRange(), [])
 
   const [discharges, setDischarges] = useState<DischargeWithSupplier[]>([])
@@ -74,6 +79,7 @@ export default function DescargasPage() {
   const [page, setPage] = useState(1)
   const [sortColumn, setSortColumn] = useState("discharge_date")
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc")
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Filters
   const [search, setSearch] = useState("")
@@ -81,8 +87,12 @@ export default function DescargasPage() {
   const [endDate, setEndDate] = useState(defaultRange.end)
   const [charcoalType, setCharcoalType] = useState("all")
 
+  // Unit toggle
+  const [unit, setUnit] = useState<VolumeUnit>("mdc")
+
   // Form dialog
   const [formOpen, setFormOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
 
   // Summary
   const [summary, setSummary] = useState({
@@ -90,6 +100,7 @@ export default function DescargasPage() {
     avgDensity: null as number | null,
     avgPrice: null as number | null,
     totalPaid: 0,
+    rawData: [] as { volume_mdc: number; density_kg_mdc: number | null; price_per_mdc: number | null }[],
   })
 
   const fetchDischarges = useCallback(async () => {
@@ -104,7 +115,7 @@ export default function DescargasPage() {
 
     let dataQuery = supabase
       .from("discharges")
-      .select("*, supplier:suppliers(name)", { count: "exact" })
+      .select("*, supplier:suppliers(name), creator:profiles!created_by(name)", { count: "exact" })
       .gte("discharge_date", startDate)
       .lte("discharge_date", endDate)
 
@@ -178,7 +189,17 @@ export default function DescargasPage() {
           ? Math.round((prices.reduce((a, b) => a + b, 0) / prices.length) * 100) / 100
           : null
       const totalPaid = data.reduce((sum, d) => sum + Number(d.net_total ?? 0), 0)
-      setSummary({ totalVolume, avgDensity, avgPrice, totalPaid })
+      setSummary({
+        totalVolume,
+        avgDensity,
+        avgPrice,
+        totalPaid,
+        rawData: data.map(d => ({
+          volume_mdc: Number(d.volume_mdc),
+          density_kg_mdc: d.density_kg_mdc,
+          price_per_mdc: d.price_per_mdc ? Number(d.price_per_mdc) : null,
+        })),
+      })
     }
   }, [startDate, endDate, charcoalType])
 
@@ -189,6 +210,24 @@ export default function DescargasPage() {
   useEffect(() => {
     fetchSummary()
   }, [fetchSummary])
+
+  // Converted KPI values (per-discharge conversion then sum)
+  const kpiVolume = useMemo(() => {
+    if (unit === "mdc") return summary.totalVolume
+    return summary.rawData.reduce(
+      (sum, d) => sum + convertVolume(d.volume_mdc, d.density_kg_mdc, unit),
+      0,
+    )
+  }, [unit, summary])
+
+  const kpiAvgPrice = useMemo(() => {
+    if (unit === "mdc") return summary.avgPrice
+    const converted = summary.rawData
+      .map(d => convertPrice(d.price_per_mdc, d.density_kg_mdc, unit))
+      .filter((p): p is number => p !== null)
+    if (converted.length === 0) return null
+    return Math.round((converted.reduce((a, b) => a + b, 0) / converted.length) * 100) / 100
+  }, [unit, summary])
 
   // Reset page on filter change
   useEffect(() => {
@@ -244,13 +283,23 @@ export default function DescargasPage() {
           <h1 className="text-2xl font-semibold tracking-tight">Descargas</h1>
           <p className="text-sm text-muted-foreground">{totalCount} no período</p>
         </div>
-        <Button
-          className="bg-[#1B4332] hover:bg-[#2D6A4F]"
-          onClick={() => setFormOpen(true)}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Nova descarga
-        </Button>
+        <div className="flex items-center gap-2">
+          <UnitToggle unit={unit} onChange={setUnit} />
+          <Button
+            variant="outline"
+            onClick={() => setReportOpen(true)}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Relatório
+          </Button>
+          <Button
+            className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+            onClick={() => setFormOpen(true)}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nova descarga
+          </Button>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -258,9 +307,9 @@ export default function DescargasPage() {
         <div>
           <p className="text-xs text-muted-foreground tracking-wide">Volume no período</p>
           <p className="text-3xl font-semibold mt-0.5">
-            {summary.totalVolume.toLocaleString("pt-BR")}
+            {Math.round(kpiVolume * 10) / 10 !== 0 ? (Math.round(kpiVolume * 10) / 10).toLocaleString("pt-BR") : "0"}
           </p>
-          <p className="text-xs text-muted-foreground">MDC</p>
+          <p className="text-xs text-muted-foreground">{unitLabel(unit)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground tracking-wide">Densidade média</p>
@@ -272,11 +321,11 @@ export default function DescargasPage() {
         <div>
           <p className="text-xs text-muted-foreground tracking-wide">Preço médio</p>
           <p className="text-3xl font-semibold mt-0.5">
-            {summary.avgPrice !== null
-              ? formatCurrency(summary.avgPrice)
+            {kpiAvgPrice !== null
+              ? formatCurrency(kpiAvgPrice)
               : "—"}
           </p>
-          <p className="text-xs text-muted-foreground">/mdc</p>
+          <p className="text-xs text-muted-foreground">{priceUnitLabel(unit)}</p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground tracking-wide">Total pago</p>
@@ -320,7 +369,7 @@ export default function DescargasPage() {
           onValueChange={(v) => setCharcoalType(v ?? "all")}
         >
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Tipo de carvao">
+            <SelectValue placeholder="Tipo de carvão">
               {(value: string) => charcoalTypeValueLabel[value] ?? value}
             </SelectValue>
           </SelectTrigger>
@@ -348,20 +397,36 @@ export default function DescargasPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-b border-black/[0.08]">
+                  <TableHead className="w-8" />
                   <SortableHeader column="discharge_date">Data</SortableHeader>
                   <TableHead className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                     Fornecedor
                   </TableHead>
-                  <SortableHeader column="volume_mdc">Volume</SortableHeader>
+                  <SortableHeader column="volume_mdc">Volume ({unitLabel(unit)})</SortableHeader>
                   <SortableHeader column="density_kg_mdc" className="hidden sm:table-cell">
                     Densidade
                   </SortableHeader>
                   <SortableHeader column="price_per_mdc" className="hidden md:table-cell">
-                    Preco
+                    Preço ({priceUnitLabel(unit)})
                   </SortableHeader>
-                  <SortableHeader column="net_total">Valor</SortableHeader>
+                  <SortableHeader column="moisture_percent" className="hidden xl:table-cell">
+                    Umidade
+                  </SortableHeader>
+                  <SortableHeader column="fines_percent" className="hidden xl:table-cell">
+                    Moinha
+                  </SortableHeader>
+                  <SortableHeader column="gross_total" className="hidden xl:table-cell">
+                    Bruto
+                  </SortableHeader>
+                  <SortableHeader column="deductions" className="hidden lg:table-cell">
+                    Descontos
+                  </SortableHeader>
+                  <SortableHeader column="net_total">Líquido</SortableHeader>
                   <TableHead className="hidden lg:table-cell text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
                     Placa
+                  </TableHead>
+                  <TableHead className="hidden 2xl:table-cell text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+                    Registrado por
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -369,44 +434,25 @@ export default function DescargasPage() {
                 {discharges.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={7}
+                      colSpan={13}
                       className="h-32 text-center text-muted-foreground"
                     >
-                      Nenhuma descarga encontrada no periodo.
+                      Nenhuma descarga encontrada no período.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  discharges.map((d) => (
-                    <TableRow
-                      key={d.id}
-                      className="cursor-pointer hover:bg-muted/20 transition-colors duration-150 [&>td]:py-3"
-                      onClick={() =>
-                        router.push(`/fornecedores/${d.supplier_id}`)
-                      }
-                    >
-                      <TableCell className="font-medium text-sm">
-                        {formatDateBR(d.discharge_date)}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {d.supplier?.name ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-sm tabular-nums">
-                        {d.volume_mdc} MDC
-                      </TableCell>
-                      <TableCell className="hidden sm:table-cell">
-                        <DensityText value={d.density_kg_mdc} />
-                      </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm tabular-nums">
-                        {formatCurrency(d.price_per_mdc)}
-                      </TableCell>
-                      <TableCell className="font-medium text-sm text-[#1B4332] tabular-nums">
-                        {formatCurrency(d.net_total)}
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground tracking-wider">
-                        {d.truck_plate || "—"}
-                      </TableCell>
-                    </TableRow>
-                  ))
+                  discharges.map((d) => {
+                    const isExpanded = expandedId === d.id
+                    return (
+                      <DischargeRow
+                        key={d.id}
+                        discharge={d}
+                        isExpanded={isExpanded}
+                        onToggle={() => setExpandedId(isExpanded ? null : d.id)}
+                        unit={unit}
+                      />
+                    )
+                  })
                 )}
               </TableBody>
             </Table>
@@ -454,6 +500,168 @@ export default function DescargasPage() {
           fetchSummary()
         }}
       />
+
+      {/* Report Dialog */}
+      <DischargeReportDialog
+        open={reportOpen}
+        onOpenChange={setReportOpen}
+      />
     </div>
+  )
+}
+
+function DischargeRow({
+  discharge: d,
+  isExpanded,
+  onToggle,
+  unit,
+}: {
+  discharge: DischargeWithSupplier
+  isExpanded: boolean
+  onToggle: () => void
+  unit: VolumeUnit
+}) {
+  const moisture = Number(d.moisture_percent)
+  const finesPercent = Number(d.fines_percent)
+  const deductions = Number(d.deductions)
+
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer hover:bg-muted/20 transition-colors duration-150 [&>td]:py-3"
+        onClick={onToggle}
+      >
+        <TableCell className="w-8 pr-0">
+          {isExpanded ? (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          )}
+        </TableCell>
+        <TableCell className="font-medium text-sm">
+          {formatDateBR(d.discharge_date)}
+        </TableCell>
+        <TableCell className="text-sm">
+          {d.supplier?.name ?? "—"}
+        </TableCell>
+        <TableCell className="text-sm tabular-nums">
+          {convertVolume(d.volume_mdc, d.density_kg_mdc, unit)} {unitLabel(unit)}
+        </TableCell>
+        <TableCell className="hidden sm:table-cell">
+          <DensityText value={d.density_kg_mdc} />
+        </TableCell>
+        <TableCell className="hidden md:table-cell text-sm tabular-nums">
+          {formatCurrency(convertPrice(d.price_per_mdc, d.density_kg_mdc, unit))}
+        </TableCell>
+        <TableCell className={`hidden xl:table-cell text-sm tabular-nums ${moisture > 5 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+          {moisture > 0 ? `${moisture}%` : "—"}
+        </TableCell>
+        <TableCell className={`hidden xl:table-cell text-sm tabular-nums ${finesPercent > 3 ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>
+          {finesPercent > 0 ? `${finesPercent}%` : "—"}
+        </TableCell>
+        <TableCell className="hidden xl:table-cell text-sm tabular-nums text-muted-foreground">
+          {d.gross_total ? formatCurrency(d.gross_total) : "—"}
+        </TableCell>
+        <TableCell className={`hidden lg:table-cell text-sm tabular-nums ${deductions > 0 ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+          {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
+        </TableCell>
+        <TableCell className="font-medium text-sm text-[#1B4332] tabular-nums">
+          {formatCurrency(d.net_total)}
+        </TableCell>
+        <TableCell className="hidden lg:table-cell font-mono text-xs text-muted-foreground tracking-wider">
+          {d.truck_plate || "—"}
+        </TableCell>
+        <TableCell className="hidden 2xl:table-cell text-sm text-muted-foreground">
+          {d.creator?.name || "—"}
+        </TableCell>
+      </TableRow>
+
+      {isExpanded && (
+        <TableRow className="bg-muted/20 hover:bg-muted/20">
+          <TableCell colSpan={13} className="p-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+              <div>
+                <p className="text-xs text-muted-foreground">Peso bruto</p>
+                <p className="font-medium">
+                  {d.gross_weight_kg
+                    ? `${Number(d.gross_weight_kg).toLocaleString("pt-BR")} kg`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Tara</p>
+                <p className="font-medium">
+                  {d.tare_weight_kg
+                    ? `${Number(d.tare_weight_kg).toLocaleString("pt-BR")} kg`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Peso líquido</p>
+                <p className="font-medium">
+                  {d.net_weight_kg
+                    ? `${Number(d.net_weight_kg).toLocaleString("pt-BR")} kg`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Densidade</p>
+                <p className="font-medium">
+                  {d.density_kg_mdc ? `${d.density_kg_mdc} kg/mdc` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Umidade</p>
+                <p className={`font-medium ${moisture > 5 ? "text-amber-600" : ""}`}>
+                  {moisture > 0 ? `${moisture}%` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Moinha</p>
+                <p className={`font-medium ${finesPercent > 3 ? "text-amber-600" : ""}`}>
+                  {Number(d.fines_kg) > 0
+                    ? `${Number(d.fines_kg).toLocaleString("pt-BR")} kg (${finesPercent}%)`
+                    : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Valor bruto</p>
+                <p className="font-medium">{d.gross_total ? formatCurrency(d.gross_total) : "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Descontos</p>
+                <p className={`font-medium ${deductions > 0 ? "text-red-500" : ""}`}>
+                  {deductions > 0 ? `-${formatCurrency(deductions)}` : "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Valor líquido</p>
+                <p className="font-medium text-[#1B4332]">{formatCurrency(d.net_total)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Nota Fiscal</p>
+                <p className="font-medium">{d.invoice_number || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Guia Florestal</p>
+                <p className="font-medium">{d.forest_guide || "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Tipo de carvão</p>
+                <p className="font-medium">
+                  {d.charcoal_type ? charcoalTypeLabels[d.charcoal_type] ?? d.charcoal_type : "—"}
+                </p>
+              </div>
+              {d.notes && (
+                <div className="col-span-2 md:col-span-3 lg:col-span-4">
+                  <p className="text-xs text-muted-foreground">Observações</p>
+                  <p className="font-medium">{d.notes}</p>
+                </div>
+              )}
+            </div>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   )
 }

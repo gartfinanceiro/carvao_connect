@@ -22,7 +22,9 @@ import {
   Scale,
   Package,
 } from "lucide-react"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, convertVolume, convertPrice, unitLabel, priceUnitLabel } from "@/lib/utils"
+import type { VolumeUnit } from "@/lib/utils"
+import { UnitToggle } from "@/components/unit-toggle"
 import type { Discharge } from "@/types/database"
 
 interface DischargeListProps {
@@ -70,6 +72,7 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
+  const [unit, setUnit] = useState<VolumeUnit>("mdc")
 
   const fetchDischarges = useCallback(async () => {
     setLoading(true)
@@ -112,7 +115,8 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
     totalVolume: number
     avgDensity: number | null
     totalPaid: number
-  }>({ totalVolume: 0, avgDensity: null, totalPaid: 0 })
+    rawData: { volume_mdc: number; density_kg_mdc: number | null }[]
+  }>({ totalVolume: 0, avgDensity: null, totalPaid: 0, rawData: [] })
 
   const fetchSummary = useCallback(async () => {
     const supabase = createClient()
@@ -131,7 +135,12 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
           ? Math.round(densities.reduce((a, b) => a + b, 0) / densities.length)
           : null
       const totalPaid = data.reduce((sum, d) => sum + Number(d.net_total ?? 0), 0)
-      setSummary({ totalVolume, avgDensity, totalPaid })
+      setSummary({
+        totalVolume,
+        avgDensity,
+        totalPaid,
+        rawData: data.map(d => ({ volume_mdc: Number(d.volume_mdc), density_kg_mdc: d.density_kg_mdc })),
+      })
     }
   }, [supplierId])
 
@@ -140,6 +149,14 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
   }, [fetchSummary, refreshKey])
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE)
+
+  const kpiVolume = useMemo(() => {
+    if (unit === "mdc") return summary.totalVolume
+    return summary.rawData.reduce(
+      (sum, d) => sum + convertVolume(d.volume_mdc, d.density_kg_mdc, unit),
+      0,
+    )
+  }, [unit, summary])
 
   // Reset page when refreshKey changes
   useEffect(() => {
@@ -168,11 +185,12 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0">
         <CardTitle className="flex items-center gap-2 text-base">
           <Truck className="h-5 w-5" />
           Descargas
         </CardTitle>
+        <UnitToggle unit={unit} onChange={setUnit} />
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Summary cards */}
@@ -191,7 +209,7 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                 Volume total
               </p>
               <p className="text-lg font-bold mt-1">
-                {summary.totalVolume.toLocaleString("pt-BR")} MDC
+                {(Math.round(kpiVolume * 10) / 10).toLocaleString("pt-BR")} {unitLabel(unit)}
               </p>
             </div>
             <div className="rounded-lg border p-3">
@@ -226,9 +244,9 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Data</TableHead>
-                    <TableHead>Volume</TableHead>
+                    <TableHead>Volume ({unitLabel(unit)})</TableHead>
                     <TableHead className="hidden sm:table-cell">Densidade</TableHead>
-                    <TableHead className="hidden md:table-cell">Preco</TableHead>
+                    <TableHead className="hidden md:table-cell">Preço ({priceUnitLabel(unit)})</TableHead>
                     <TableHead>Valor a pagar</TableHead>
                     <TableHead className="hidden lg:table-cell">Placa</TableHead>
                     <TableHead className="w-10" />
@@ -245,6 +263,7 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                         onToggle={() =>
                           setExpandedId(isExpanded ? null : d.id)
                         }
+                        unit={unit}
                       />
                     )
                   })}
@@ -293,10 +312,12 @@ function ExpandableRow({
   discharge,
   isExpanded,
   onToggle,
+  unit,
 }: {
   discharge: Discharge
   isExpanded: boolean
   onToggle: () => void
+  unit: VolumeUnit
 }) {
   return (
     <>
@@ -307,12 +328,12 @@ function ExpandableRow({
         <TableCell className="font-medium">
           {formatDateBR(discharge.discharge_date)}
         </TableCell>
-        <TableCell>{discharge.volume_mdc} MDC</TableCell>
+        <TableCell>{convertVolume(discharge.volume_mdc, discharge.density_kg_mdc, unit)} {unitLabel(unit)}</TableCell>
         <TableCell className="hidden sm:table-cell">
           <DensityBadge value={discharge.density_kg_mdc} />
         </TableCell>
         <TableCell className="hidden md:table-cell">
-          {formatCurrency(discharge.price_per_mdc)}
+          {formatCurrency(convertPrice(discharge.price_per_mdc, discharge.density_kg_mdc, unit))}
         </TableCell>
         <TableCell className="font-medium text-[#1B4332]">
           {formatCurrency(discharge.net_total)}

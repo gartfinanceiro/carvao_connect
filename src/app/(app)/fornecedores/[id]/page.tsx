@@ -19,22 +19,34 @@ export default function SupplierDetailPage() {
   const [supplier, setSupplier] = useState<Supplier | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+  const [totalContractedAll, setTotalContractedAll] = useState(0)
 
   const fetchSupplier = useCallback(async () => {
     const supabase = createClient()
-    const { data, error } = await supabase
-      .from("suppliers")
-      .select("*")
-      .eq("id", id)
-      .single()
+    const [supplierResult, contractedResult] = await Promise.all([
+      supabase
+        .from("suppliers")
+        .select("*")
+        .eq("id", id)
+        .single(),
+      supabase
+        .from("suppliers")
+        .select("contracted_loads")
+        .neq("status", "arquivado"),
+    ])
 
-    if (error || !data) {
+    if (supplierResult.error || !supplierResult.data) {
       setNotFound(true)
       setLoading(false)
       return
     }
 
-    setSupplier(data as Supplier)
+    setSupplier(supplierResult.data as Supplier)
+    const total = (contractedResult.data ?? []).reduce(
+      (sum: number, s: { contracted_loads: number }) => sum + (s.contracted_loads ?? 0),
+      0,
+    )
+    setTotalContractedAll(total)
     setLoading(false)
   }, [id])
 
@@ -76,6 +88,7 @@ export default function SupplierDetailPage() {
 
       <SupplierDetail
         supplier={supplier}
+        totalContractedAll={totalContractedAll}
         onRefresh={fetchSupplier}
         onArchive={isAdmin ? async (s) => {
           const supabase = createClient()

@@ -6,15 +6,19 @@ import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, X } from "lucide-react"
+import { Loader2, Pencil, X } from "lucide-react"
 import { toast } from "sonner"
 import { QueueForm } from "@/components/queue-form"
 import { DischargeForm } from "@/components/discharge-form"
 import { queueStatusLabels, queueEntryTypeLabels } from "@/lib/labels"
+import { convertVolume, unitLabel } from "@/lib/utils"
+import type { VolumeUnit } from "@/lib/utils"
+import { UnitToggle } from "@/components/unit-toggle"
 import type { QueueEntry, Supplier, QueueStatus, QueueEntryType } from "@/types/database"
 
 interface QueueEntryWithSupplier extends Omit<QueueEntry, 'suppliers'> {
   suppliers: Supplier | null
+  creator: { name: string } | null
 }
 
 export default function FilaPage() {
@@ -27,6 +31,8 @@ export default function FilaPage() {
   const [defaultType, setDefaultType] = useState<QueueEntryType>("fila")
   const [filterType, setFilterType] = useState<QueueEntryType | "todos">("todos")
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [editEntry, setEditEntry] = useState<QueueEntryWithSupplier | null>(null)
+  const [unit, setUnit] = useState<VolumeUnit>("mdc")
 
   const fetchEntries = useCallback(async () => {
     setLoading(true)
@@ -46,7 +52,7 @@ export default function FilaPage() {
 
       let query = supabase
         .from("queue_entries")
-        .select("*, suppliers(name, avg_density, last_price)")
+        .select("*, suppliers(name, avg_density, last_price), creator:profiles!created_by(name)")
         .eq("organization_id", orgData.organization_id)
         .eq("scheduled_date", selectedDate)
 
@@ -126,6 +132,19 @@ export default function FilaPage() {
   const completedCount = entries.filter((e) => e.status === "concluido").length
   const totalVolume = entries.reduce((sum, e) => sum + (e.estimated_volume_mdc || 0), 0)
 
+  const convertedTotalVolume = entries.reduce((sum, e) => {
+    const vol = e.estimated_volume_mdc || 0
+    const density = (e.suppliers as Supplier | null)?.avg_density ?? null
+    return sum + convertVolume(vol, density, unit)
+  }, 0)
+
+  function entryVolume(entry: QueueEntryWithSupplier): string {
+    const vol = entry.estimated_volume_mdc
+    if (!vol) return "—"
+    const density = (entry.suppliers as Supplier | null)?.avg_density ?? null
+    return `${convertVolume(vol, density, unit)} ${unitLabel(unit)}`
+  }
+
 
   function generateWhatsAppText() {
     const dateObj = new Date(selectedDate + "T12:00:00")
@@ -142,7 +161,8 @@ export default function FilaPage() {
         const time = e.scheduled_time ? e.scheduled_time.slice(0, 5) : String(e.scheduled_position) + "\u00ba"
         const supplier = (e.suppliers as any)?.name ?? "Fornecedor"
         const st = e.status === "concluido" ? " \u2705" : e.status === "em_descarga" ? " \ud83d\udd04" : ""
-        lines.push(time + " - " + supplier + " | " + (e.truck_plate ?? "") + " | " + (e.estimated_volume_mdc ?? "?") + " MDC" + st)
+        const vol = e.estimated_volume_mdc ? convertVolume(e.estimated_volume_mdc, (e.suppliers as Supplier | null)?.avg_density ?? null, unit) : "?"
+        lines.push(time + " - " + supplier + " | " + (e.truck_plate ?? "") + " | " + vol + " " + unitLabel(unit) + st)
       }
       lines.push("")
     }
@@ -151,11 +171,12 @@ export default function FilaPage() {
       for (const e of queue) {
         const supplier = (e.suppliers as any)?.name ?? "Fornecedor"
         const st = e.status === "concluido" ? " \u2705" : e.status === "em_descarga" ? " \ud83d\udd04" : ""
-        lines.push(String(e.queue_position) + "\u00ba - " + supplier + " | " + (e.truck_plate ?? "") + " | " + (e.estimated_volume_mdc ?? "?") + " MDC" + st)
+        const vol = e.estimated_volume_mdc ? convertVolume(e.estimated_volume_mdc, (e.suppliers as Supplier | null)?.avg_density ?? null, unit) : "?"
+        lines.push(String(e.queue_position) + "\u00ba - " + supplier + " | " + (e.truck_plate ?? "") + " | " + vol + " " + unitLabel(unit) + st)
       }
       lines.push("")
     }
-    lines.push("Total: " + totalVolume + " MDC | " + pendingCount + " aguardando | " + completedCount + " concluidos")
+    lines.push("Total: " + (Math.round(convertedTotalVolume * 10) / 10) + " " + unitLabel(unit) + " | " + pendingCount + " aguardando | " + completedCount + " concluidos")
     return lines.join("\n")
   }
 
@@ -184,6 +205,7 @@ export default function FilaPage() {
             />
             <Button
               onClick={() => {
+                setEditEntry(null)
                 setDefaultType("fila")
                 setQueueFormOpen(true)
               }}
@@ -193,6 +215,7 @@ export default function FilaPage() {
             </Button>
             <Button
               onClick={() => {
+                setEditEntry(null)
                 setDefaultType("agendamento")
                 setQueueFormOpen(true)
               }}
@@ -201,6 +224,7 @@ export default function FilaPage() {
               Agendar descarga
             </Button>
             <div className="w-px h-6 bg-[#E5E5E5]" />
+            <UnitToggle unit={unit} onChange={setUnit} />
             <Button
               onClick={handleCopyWhatsApp}
               variant="outline"
@@ -243,7 +267,7 @@ export default function FilaPage() {
               <p className="text-xs text-[#737373] uppercase tracking-wide font-semibold mb-1">
                 Volume total
               </p>
-              <p className="text-2xl font-bold text-[#1B4332]">{totalVolume.toFixed(1)} MDC</p>
+              <p className="text-2xl font-bold text-[#1B4332]">{(Math.round(convertedTotalVolume * 10) / 10).toFixed(1)} {unitLabel(unit)}</p>
             </CardContent>
           </Card>
         </div>
@@ -292,10 +316,14 @@ export default function FilaPage() {
                       {entry.entry_type === "agendamento" ? (
                         <div>
                           <p className="text-lg font-bold text-[#1B4332]">
-                            {entry.scheduled_time ? entry.scheduled_time.slice(0, 5) : `${entry.scheduled_position}º`}
+                            {entry.scheduled_time
+                              ? entry.scheduled_time.slice(0, 5)
+                              : entry.scheduled_position
+                                ? `${entry.scheduled_position}º`
+                                : "—"}
                           </p>
                           <p className="text-xs text-[#737373]">
-                            {entry.scheduled_time ? "Horário" : "Posição"}
+                            {entry.scheduled_time ? "Horário" : entry.scheduled_position ? "Posição" : "Agendado"}
                           </p>
                         </div>
                       ) : (
@@ -320,13 +348,15 @@ export default function FilaPage() {
                         {entry.truck_plate && `Placa: ${entry.truck_plate}`}
                         {entry.truck_plate && entry.driver_name && " | "}
                         {entry.driver_name && `Motorista: ${entry.driver_name}`}
+                        {(entry.truck_plate || entry.driver_name) && entry.creator?.name && " · "}
+                        {entry.creator?.name && `por ${entry.creator.name}`}
                       </p>
                     </div>
 
                     {/* Volume */}
                     <div className="flex-shrink-0 text-right">
                       <p className="font-semibold text-[#1B4332]">
-                        {entry.estimated_volume_mdc || "—"} MDC
+                        {entryVolume(entry)}
                       </p>
                     </div>
 
@@ -346,6 +376,17 @@ export default function FilaPage() {
 
                     {/* Actions */}
                     <div className="flex-shrink-0 flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditEntry(entry)
+                          setQueueFormOpen(true)
+                        }}
+                        className="text-[#1B4332] hover:bg-[#1B4332]/10"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                       {entry.status !== "concluido" && entry.status !== "cancelado" && (
                         <Button
                           size="sm"
@@ -382,8 +423,12 @@ export default function FilaPage() {
       {/* Modals */}
       <QueueForm
         open={queueFormOpen}
-        onOpenChange={setQueueFormOpen}
+        onOpenChange={(open) => {
+          setQueueFormOpen(open)
+          if (!open) setEditEntry(null)
+        }}
         defaultType={defaultType}
+        editEntry={editEntry}
         onSuccess={fetchEntries}
       />
 

@@ -27,8 +27,11 @@ import {
   Pencil,
   Archive,
   ArchiveRestore,
+  HelpCircle,
 } from "lucide-react"
 import { formatRelativeDate, getDaysFromNow } from "@/lib/utils"
+import { classifySupplier, getSupplierMetrics, classificationSortOrder } from "@/lib/classification"
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
 import type { Supplier } from "@/types/database"
 
 interface SupplierTableProps {
@@ -38,6 +41,8 @@ interface SupplierTableProps {
   pageSize: number
   sortColumn: string
   sortDirection: "asc" | "desc"
+  porteFilter?: string
+  totalContractedAll: number
   onSort: (column: string) => void
   onPageChange: (page: number) => void
   onNewInteraction?: (supplier: Supplier) => void
@@ -79,9 +84,31 @@ export function SupplierTable({
   onEditSupplier,
   onArchive,
   onReactivate,
+  porteFilter,
+  totalContractedAll,
 }: SupplierTableProps) {
   const router = useRouter()
   const totalPages = Math.ceil(totalCount / pageSize)
+
+  // Client-side porte filter + sort
+  const displaySuppliers = (() => {
+    let list = suppliers
+    if (porteFilter && porteFilter !== "all") {
+      list = list.filter((s) => {
+        const c = classifySupplier(s.monthly_capacity, s.contracted_loads, totalContractedAll)
+        return c.key === porteFilter
+      })
+    }
+    if (sortColumn === "porte") {
+      const dir = sortDirection === "asc" ? 1 : -1
+      list = [...list].sort((a, b) => {
+        const ca = classifySupplier(a.monthly_capacity, a.contracted_loads, totalContractedAll)
+        const cb = classifySupplier(b.monthly_capacity, b.contracted_loads, totalContractedAll)
+        return (classificationSortOrder[ca.key] - classificationSortOrder[cb.key]) * dir
+      })
+    }
+    return list
+  })()
 
   function SortableHeader({
     column,
@@ -119,24 +146,40 @@ export function SupplierTable({
               <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Cap.</TableHead>
               <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Contratado</TableHead>
               <TableHead className="hidden md:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Ocioso</TableHead>
+              <TableHead
+                className="hidden lg:table-cell cursor-pointer select-none hover:bg-muted/50 bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+                onClick={() => onSort("porte")}
+              >
+                <div className="flex items-center gap-1">
+                  Porte
+                  <span title="Classificação baseada no porte (capacidade) e participação no consumo. Estratégico = grande + alta participação. Oportunidade = grande + baixa participação. Dependência = pequeno + alta participação. Complementar = pequeno + baixa participação.">
+                    <HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50" />
+                  </span>
+                  <ArrowUpDown
+                    className={`h-3 w-3 ${sortColumn === "porte" ? "text-foreground" : "text-muted-foreground/50"}`}
+                  />
+                </div>
+              </TableHead>
               <SortableHeader column="doc_status">Docs</SortableHeader>
               <SortableHeader column="last_contact_at">Último contato</SortableHeader>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {suppliers.length === 0 ? (
+            {displaySuppliers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
                   Nenhum fornecedor encontrado.
                 </TableCell>
               </TableRow>
             ) : (
-              suppliers.map((supplier) => {
+              displaySuppliers.map((supplier) => {
                 const idle =
                   (supplier.monthly_capacity ?? 0) - supplier.contracted_loads
                 const daysSinceContact = getDaysFromNow(supplier.last_contact_at)
                 const lastContactClass = getLastContactClass(daysSinceContact)
+                const classification = classifySupplier(supplier.monthly_capacity, supplier.contracted_loads, totalContractedAll)
+                const metrics = getSupplierMetrics(supplier.monthly_capacity, supplier.contracted_loads, totalContractedAll)
 
                 return (
                   <TableRow
@@ -179,6 +222,31 @@ export function SupplierTable({
                       ) : (
                         <span className="text-muted-foreground">{idle}</span>
                       )}
+                    </TableCell>
+                    <TableCell className="hidden lg:table-cell">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger
+                            render={<span className={`text-xs font-medium ${classification.color} cursor-default`} />}
+                          >
+                            {classification.label}
+                          </TooltipTrigger>
+                          <TooltipContent side="left" className="max-w-xs space-y-1">
+                            <p className="font-medium text-xs">{classification.label}</p>
+                            <p className="text-[11px] opacity-80">
+                              Aproveitamento: {metrics.utilization}% ({supplier.contracted_loads} de {supplier.monthly_capacity ?? 0} cargas)
+                            </p>
+                            <p className="text-[11px] opacity-80">
+                              Participação: {metrics.share}% do consumo total
+                            </p>
+                            {metrics.idleCapacity > 0 && (
+                              <p className="text-[11px] opacity-80">
+                                {metrics.idleCapacity} carga{metrics.idleCapacity > 1 ? "s" : ""} ociosa{metrics.idleCapacity > 1 ? "s" : ""}
+                              </p>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     </TableCell>
                     <TableCell>
                       <DocStatusBadge status={supplier.doc_status} />
