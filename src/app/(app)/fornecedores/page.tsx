@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Plus, Search, Lock, Archive } from "lucide-react"
+import { Plus, Search, Lock, Archive, Upload } from "lucide-react"
 import { toast } from "sonner"
 import { SupplierTable } from "@/components/supplier-table"
 import { SupplierFilters } from "@/components/supplier-filters"
 import { SupplierForm } from "@/components/supplier-form"
+import { SupplierImport } from "@/components/supplier-import"
 import { InteractionForm } from "@/components/interaction-form"
 import { useSubscription } from "@/components/subscription-provider"
 import { AccessGate } from "@/components/access-gate"
@@ -59,6 +60,9 @@ function FornecedoresContent() {
   // Interaction dialog
   const [interactionOpen, setInteractionOpen] = useState(false)
   const [interactionSupplier, setInteractionSupplier] = useState<Supplier | null>(null)
+
+  // Import dialog
+  const [importOpen, setImportOpen] = useState(false)
 
   const fetchSuppliers = useCallback(async () => {
     setLoading(true)
@@ -301,13 +305,29 @@ function FornecedoresContent() {
             </button>
           </div>
           {viewMode === "active" && (
-            <Button
-              className={`rounded-xl ${isReadOnly ? "bg-gray-400 hover:bg-gray-500" : "bg-[#1B4332] hover:bg-[#2D6A4F]"}`}
-              onClick={handleNewSupplier}
-            >
-              {isReadOnly ? <Lock className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
-              Novo fornecedor
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                className="rounded-xl"
+                onClick={() => {
+                  if (isReadOnly) {
+                    toast.error("Seu plano não permite importar fornecedores. Assine para continuar.")
+                    return
+                  }
+                  setImportOpen(true)
+                }}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Importar
+              </Button>
+              <Button
+                className={`rounded-xl ${isReadOnly ? "bg-gray-400 hover:bg-gray-500" : "bg-[#1B4332] hover:bg-[#2D6A4F]"}`}
+                onClick={handleNewSupplier}
+              >
+                {isReadOnly ? <Lock className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+                Novo fornecedor
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -380,6 +400,23 @@ function FornecedoresContent() {
           onSuccess={fetchSuppliers}
         />
       )}
+
+      {/* Import Dialog */}
+      <SupplierImport
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onSuccess={() => {
+          fetchSuppliers()
+          // Refresh limit info
+          const supabase = createClient()
+          supabase.rpc("check_plan_limit", { p_resource: "suppliers" }).then(({ data }) => {
+            const info = data as unknown as { current: number; max: number } | null
+            if (info) setLimitInfo(info)
+          })
+        }}
+        currentCount={limitInfo?.current ?? 0}
+        maxCount={limitInfo?.max ?? 50}
+      />
     </div>
   )
 }

@@ -41,3 +41,6 @@ next-env.d.ts
 
 # MCP config (contains project references)
 .mcp.json
+
+# Supabase CLI temp
+supabase/.temp/
