@@ -140,6 +140,7 @@ export function SupplierTable({
           <TableHeader>
             <TableRow className="border-b border-border/30">
               <SortableHeader column="name">Nome</SortableHeader>
+              <TableHead className="hidden sm:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">DCF</TableHead>
               <TableHead className="hidden sm:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Cidade/UF</TableHead>
               <TableHead className="hidden lg:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Negociador</TableHead>
               <TableHead className="hidden lg:table-cell bg-muted/30 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Densidade</TableHead>
@@ -168,7 +169,7 @@ export function SupplierTable({
           <TableBody>
             {displaySuppliers.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={11} className="h-32 text-center text-muted-foreground">
+                <TableCell colSpan={12} className="h-32 text-center text-muted-foreground">
                   Nenhum fornecedor encontrado.
                 </TableCell>
               </TableRow>
@@ -194,6 +195,9 @@ export function SupplierTable({
                       <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 ml-2">
                         {supplier.person_type === "pf" ? "PF" : "PJ"}
                       </span>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-sm font-mono text-xs">
+                      {supplier.dcf_number || "—"}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell text-sm">
                       {supplier.city && supplier.state

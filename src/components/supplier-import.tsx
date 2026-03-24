@@ -50,6 +50,7 @@ interface ImportRow {
   monthly_capacity: number | null
   contracted_loads: number
   last_price: number | null
+  dcf_number: string
   dcf_issue_date: string | null
   notes: string
   errors: string[]
@@ -111,6 +112,11 @@ const COLUMN_MAP: Record<string, keyof Omit<ImportRow, "rowNum" | "errors" | "wa
   "preco ultima compra": "last_price",
   "preço (r$/mdc)": "last_price",
   "preco (r$/mdc)": "last_price",
+  "número dcf": "dcf_number",
+  "numero dcf": "dcf_number",
+  "dcf número": "dcf_number",
+  "dcf numero": "dcf_number",
+  "nº dcf": "dcf_number",
   "data dcf": "dcf_issue_date",
   "emissão dcf": "dcf_issue_date",
   "emissao dcf": "dcf_issue_date",
@@ -126,6 +132,7 @@ function generateTemplate() {
   const headers = [
     "Nome / Razão Social",
     "CPF/CNPJ",
+    "Número DCF",
     "Tipo (PF/PJ)",
     "Negociador",
     "Telefone(s)",
@@ -143,6 +150,7 @@ function generateTemplate() {
     [
       "Carbonífera Vale Verde",
       "12.345.678/0001-99",
+      "DCF-001234/2024",
       "PJ",
       "José Silva",
       "(31) 99999-8888 / (31) 3333-4444",
@@ -308,7 +316,8 @@ function validateRow(row: ImportRow): ImportRow {
   // Warnings (non-blocking)
   if (!row.contact_name) warnings.push("Sem negociador")
   if (row.last_price === null) warnings.push("Sem preço")
-  if (!row.dcf_issue_date) warnings.push("Sem DCF")
+  if (!row.dcf_number.trim()) errors.push("Número DCF obrigatório")
+  if (!row.dcf_issue_date) warnings.push("Sem data de emissão DCF")
 
   return { ...row, errors, warnings }
 }
@@ -372,6 +381,7 @@ function parseSpreadsheet(data: ArrayBuffer): ImportRow[] {
       monthly_capacity: getNum("monthly_capacity"),
       contracted_loads: getNum("contracted_loads") ?? 0,
       last_price: getNum("last_price"),
+      dcf_number: get("dcf_number"),
       dcf_issue_date: parseDate(get("dcf_issue_date")),
       notes: get("notes"),
       errors: [],
@@ -513,6 +523,7 @@ export function SupplierImport({
         monthly_capacity: row.monthly_capacity,
         contracted_loads: row.contracted_loads,
         last_price: row.last_price,
+        dcf_number: row.dcf_number.trim(),
         dcf_issue_date: row.dcf_issue_date,
         notes: row.notes.trim() || null,
       }))
@@ -534,6 +545,7 @@ export function SupplierImport({
             monthly_capacity: row.monthly_capacity,
             contracted_loads: row.contracted_loads,
             last_price: row.last_price,
+            dcf_number: row.dcf_number.trim(),
             dcf_issue_date: row.dcf_issue_date,
             notes: row.notes.trim() || null,
           }

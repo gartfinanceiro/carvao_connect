@@ -393,6 +393,13 @@ export function SupplierDetail({ supplier, totalContractedAll, onRefresh, onArch
           </div>
 
           <div>
+            <p className="text-xs text-muted-foreground mb-1">Número da DCF</p>
+            <span className="text-sm font-mono">
+              {supplier.dcf_number || "Não informado"}
+            </span>
+          </div>
+
+          <div>
             <p className="text-xs text-muted-foreground mb-1">CPF/CNPJ</p>
             <span className="text-sm">
               {formatDocument(supplier.document)}

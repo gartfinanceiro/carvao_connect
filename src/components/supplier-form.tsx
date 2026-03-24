@@ -44,6 +44,7 @@ interface FormData {
   monthly_capacity: string
   contracted_loads: string
   last_price: string
+  dcf_number: string
   dcf_issue_date: string
   notes: string
 }
@@ -61,6 +62,7 @@ function getInitialFormData(supplier?: Supplier | null): FormData {
     monthly_capacity: supplier?.monthly_capacity?.toString() ?? "",
     contracted_loads: supplier?.contracted_loads?.toString() ?? "0",
     last_price: supplier?.last_price?.toString() ?? "",
+    dcf_number: supplier?.dcf_number ?? "",
     dcf_issue_date: supplier?.dcf_issue_date ?? "",
     notes: supplier?.notes ?? "",
   }
@@ -132,6 +134,8 @@ export function SupplierForm({
       }
     }
 
+    if (!form.dcf_number.trim()) newErrors.dcf_number = "Número da DCF é obrigatório"
+
     if (!form.city.trim()) newErrors.city = "Cidade é obrigatória"
     if (!form.state) newErrors.state = "UF é obrigatória"
 
@@ -174,6 +178,7 @@ export function SupplierForm({
       monthly_capacity: Number(form.monthly_capacity),
       contracted_loads: Number(form.contracted_loads) || 0,
       last_price: form.last_price ? Number(form.last_price) : null,
+      dcf_number: form.dcf_number.trim(),
       dcf_issue_date: form.dcf_issue_date || null,
       notes: form.notes.trim() || null,
     }
@@ -194,7 +199,11 @@ export function SupplierForm({
       const { error } = await supabase.from("suppliers").insert(payload)
 
       if (error) {
-        toast.error("Erro ao criar fornecedor.")
+        if (error.code === "23505") {
+          toast.error("Já existe um fornecedor com este CPF/CNPJ e número de DCF.")
+        } else {
+          toast.error("Erro ao criar fornecedor.")
+        }
         setLoading(false)
         return
       }
@@ -271,6 +280,19 @@ export function SupplierForm({
                 />
                 {errors.document && (
                   <p className="text-xs text-destructive">{errors.document}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="dcf_number">Número da DCF *</Label>
+                <Input
+                  id="dcf_number"
+                  value={form.dcf_number}
+                  onChange={(e) => updateField("dcf_number", e.target.value)}
+                  placeholder="Ex: DCF-001234/2024"
+                />
+                {errors.dcf_number && (
+                  <p className="text-xs text-destructive">{errors.dcf_number}</p>
                 )}
               </div>
 

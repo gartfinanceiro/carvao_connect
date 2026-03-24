@@ -90,6 +90,7 @@ export interface Supplier {
   doc_status: DocStatus
   dcf_issue_date: string | null
   dcf_expiry: string | null
+  dcf_number: string | null
   last_price: number | null
   notes: string | null
   status: SupplierStatus
