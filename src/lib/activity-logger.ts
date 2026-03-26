@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 export type ActivityEventType =
   | "interaction_registered"
   | "discharge_registered"
+  | "discharge_deleted"
   | "load_scheduled"
   | "load_cancelled"
   | "load_postponed"

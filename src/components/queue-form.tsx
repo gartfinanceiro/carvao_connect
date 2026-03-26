@@ -18,11 +18,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2, FileCheck, FileX } from "lucide-react"
+import { Loader2, FileCheck, FileX, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { queueStatusLabels } from "@/lib/labels"
 import type { QueueEntryType, QueueStatus } from "@/types/database"
 import type { Supplier } from "@/types/database"
+import { getSupplierSuggestions } from "@/lib/supplier-suggestions"
 
 interface EditEntry {
   id: string
@@ -97,8 +98,7 @@ export function QueueForm({
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loadingSuppliers, setLoadingSuppliers] = useState(false)
-  const [lastTruckPlate, setLastTruckPlate] = useState<string>("")
-  const [averageVolume, setAverageVolume] = useState<number | null>(null)
+  const [suggestedFields, setSuggestedFields] = useState<Set<keyof FormData>>(new Set())
 
   const fetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true)
@@ -115,38 +115,37 @@ export function QueueForm({
     setLoadingSuppliers(false)
   }, [])
 
-  const fetchSupplierData = useCallback(async (supplierId: string) => {
+  const applySuggestions = useCallback(async (supplierId: string) => {
+    if (editEntry) return
     const supabase = createClient()
+    try {
+      const suggestions = await getSupplierSuggestions(supabase, supplierId)
+      setForm((prev) => {
+        const next = { ...prev }
+        const suggested = new Set<keyof FormData>()
 
-    // Fetch last truck plate from most recent discharge
-    const { data: dischargeData } = await supabase
-      .from("discharges")
-      .select("truck_plate")
-      .eq("supplier_id", supplierId)
-      .order("discharge_date", { ascending: false })
-      .limit(1)
+        if (suggestions.truck_plate && !prev.truck_plate) {
+          next.truck_plate = suggestions.truck_plate.toUpperCase()
+          suggested.add("truck_plate")
+        }
 
-    if (dischargeData && dischargeData.length > 0) {
-      setLastTruckPlate(dischargeData[0].truck_plate || "")
-    } else {
-      setLastTruckPlate("")
+        if (suggestions.driver_name && !prev.driver_name) {
+          next.driver_name = suggestions.driver_name
+          suggested.add("driver_name")
+        }
+
+        if (suggestions.avg_volume_mdc && !prev.estimated_volume_mdc) {
+          next.estimated_volume_mdc = String(suggestions.avg_volume_mdc)
+          suggested.add("estimated_volume_mdc")
+        }
+
+        setSuggestedFields(suggested)
+        return next
+      })
+    } catch {
+      // fire-and-forget
     }
-
-    // Fetch average volume from last 5 discharges
-    const { data: volumeData } = await supabase
-      .from("discharges")
-      .select("volume_mdc")
-      .eq("supplier_id", supplierId)
-      .order("discharge_date", { ascending: false })
-      .limit(5)
-
-    if (volumeData && volumeData.length > 0) {
-      const avgVol = volumeData.reduce((sum, d) => sum + (d.volume_mdc || 0), 0) / volumeData.length
-      setAverageVolume(Math.round(avgVol * 100) / 100)
-    } else {
-      setAverageVolume(null)
-    }
-  }, [])
+  }, [editEntry])
 
   useEffect(() => {
     if (open) {
@@ -166,33 +165,31 @@ export function QueueForm({
         })
       } else {
         const initial = getInitialFormData(defaultType)
-        if (defaultSupplierId) initial.supplier_id = defaultSupplierId
+        if (defaultSupplierId) {
+          initial.supplier_id = defaultSupplierId
+          applySuggestions(defaultSupplierId)
+        }
         setForm(initial)
       }
       setErrors({})
-      setLastTruckPlate("")
-      setAverageVolume(null)
+      setSuggestedFields(new Set())
     }
-  }, [open, fetchSuppliers, defaultType, defaultSupplierId, editEntry])
-
-  useEffect(() => {
-    if (form.supplier_id) {
-      fetchSupplierData(form.supplier_id)
-    }
-  }, [form.supplier_id, fetchSupplierData])
+  }, [open, fetchSuppliers, defaultType, defaultSupplierId, editEntry, applySuggestions])
 
   function updateField<K extends keyof FormData>(key: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
     setErrors((prev) => ({ ...prev, [key]: undefined }))
-
-    // Auto-fill truck_plate and estimated_volume when supplier changes
-    if (key === "supplier_id") {
-      if (lastTruckPlate) {
-        setForm((prev) => ({ ...prev, truck_plate: lastTruckPlate }))
-      }
-      if (averageVolume) {
-        setForm((prev) => ({ ...prev, estimated_volume_mdc: String(averageVolume) }))
-      }
+    // Clear suggestion indicator when user manually edits
+    if (suggestedFields.has(key)) {
+      setSuggestedFields((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
+    // Fetch suggestions when supplier changes
+    if (key === "supplier_id" && value) {
+      applySuggestions(value as string)
     }
   }
 
@@ -425,11 +422,16 @@ export function QueueForm({
                   id="truck_plate"
                   type="text"
                   value={form.truck_plate}
-                  onChange={(e) => updateField("truck_plate", e.target.value)}
+                  onChange={(e) => updateField("truck_plate", e.target.value.toUpperCase())}
                   placeholder="ex: ABC1D23"
                   className="h-11 rounded-xl"
                 />
                 {errors.truck_plate && <p className="text-xs text-red-500">{errors.truck_plate}</p>}
+                {suggestedFields.has("truck_plate") && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Sugerido com base no histórico
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -443,6 +445,11 @@ export function QueueForm({
                   className="h-11 rounded-xl"
                 />
                 {errors.driver_name && <p className="text-xs text-red-500">{errors.driver_name}</p>}
+                {suggestedFields.has("driver_name") && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Sugerido com base no histórico
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -452,13 +459,18 @@ export function QueueForm({
                   type="number"
                   value={form.estimated_volume_mdc}
                   onChange={(e) => updateField("estimated_volume_mdc", e.target.value)}
-                  placeholder={averageVolume ? String(averageVolume) : "ex: 50"}
+                  placeholder="ex: 50"
                   className="h-11 rounded-xl"
                   step="0.01"
                   min={0}
                 />
                 {errors.estimated_volume_mdc && (
                   <p className="text-xs text-red-500">{errors.estimated_volume_mdc}</p>
+                )}
+                {suggestedFields.has("estimated_volume_mdc") && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Sugerido com base no histórico
+                  </p>
                 )}
               </div>
             </div>

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import OpenAI from "openai"
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions"
 
 const SYSTEM_PROMPT = `Você é um assistente especializado em extrair dados estruturados de tabelas de preço de carvão vegetal siderúrgico.
 
-Analise a imagem/documento enviado e extraia TODAS as informações em formato JSON, seguindo EXATAMENTE esta estrutura:
+Analise o documento enviado e extraia TODAS as informações em formato JSON, seguindo EXATAMENTE esta estrutura:
 
 {
   "density_pricing_rules": [
@@ -12,7 +13,8 @@ Analise a imagem/documento enviado e extraia TODAS as informações em formato J
       "person_type": "pf" ou "pj",
       "min_density": número (kg/MDC),
       "max_density": número (kg/MDC),
-      "price_per_mdc": número (R$)
+      "price_per_mdc": número (R$),
+      "pricing_unit": "mdc" ou "ton"
     }
   ],
   "moisture_rules": [
@@ -45,6 +47,7 @@ Regras de interpretação:
 - "De X a Y kg" = min_density: X, max_density: Y
 - "Acima de X kg" = min_density: X, max_density: 99999
 - Faixas como "< 200", "200-220", "> 220" devem virar min/max numéricos
+- Se o preço é por tonelada (R$/ton), pricing_unit = "ton". Se por MDC, pricing_unit = "mdc"
 - "Desconto excedente no peso" ou "desconta excedente" = type "excess"
 - "Desconto total de umidade" ou "desconta toda umidade" = type "total"
 - "Tolerância" ou "sem desconto" ou "isento" = type "none"
@@ -112,22 +115,45 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Erro ao baixar arquivo." }, { status: 500 })
     }
 
-    const arrayBuffer = await fileResponse.arrayBuffer()
-    const base64Content = Buffer.from(arrayBuffer).toString("base64")
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
 
     // Determine mime type from file extension
     const ext = file_path.split(".").pop()?.toLowerCase()
+    const isPdf = ext === "pdf"
     let mimeType = "application/pdf"
     if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg"
     else if (ext === "png") mimeType = "image/png"
 
-    // 7. Call OpenAI Vision API
+    // 7. Build messages based on file type
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    let messages: ChatCompletionMessageParam[]
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
-      max_tokens: 4000,
-      messages: [
+    if (isPdf) {
+      // PDF → extract text → send as text message
+      // Import lib directly to avoid pdf-parse's index.js test file loading
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const pdfParse = require("pdf-parse/lib/pdf-parse")
+      const pdfData = await pdfParse(fileBuffer)
+      const pdfText = pdfData.text
+
+      if (!pdfText || pdfText.trim().length < 10) {
+        return NextResponse.json(
+          { error: "PDF sem texto legível. Tente enviar como imagem (JPG/PNG) — tire uma foto ou faça print screen da tabela." },
+          { status: 422 }
+        )
+      }
+
+      messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "user",
+          content: `Extraia os dados desta tabela de preços de carvão vegetal:\n\n${pdfText}`,
+        },
+      ]
+    } else {
+      // Image → send as image_url via Vision API
+      const base64Content = fileBuffer.toString("base64")
+      messages = [
         { role: "system", content: SYSTEM_PROMPT },
         {
           role: "user",
@@ -145,7 +171,14 @@ export async function POST(request: Request) {
             },
           ],
         },
-      ],
+      ]
+    }
+
+    // 8. Call OpenAI API
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 4000,
+      messages,
     })
 
     const content = completion.choices[0]?.message?.content
@@ -156,7 +189,7 @@ export async function POST(request: Request) {
       )
     }
 
-    // 8. Parse response
+    // 9. Parse response
     let parsed: Record<string, unknown>
     try {
       const cleaned = content.replace(/```json|```/g, "").trim()

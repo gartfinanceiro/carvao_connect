@@ -20,6 +20,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
   Plus,
   Search,
   ArrowUpDown,
@@ -28,7 +35,12 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Pencil,
+  Trash2,
+  Printer,
+  Loader2,
 } from "lucide-react"
+import { toast } from "sonner"
 import { charcoalTypeLabels } from "@/lib/labels"
 import { formatCurrency, convertVolume, convertPrice, unitLabel, priceUnitLabel } from "@/lib/utils"
 import type { VolumeUnit } from "@/lib/utils"
@@ -37,6 +49,9 @@ import { DischargeForm } from "@/components/discharge-form"
 import { DischargeReportDialog } from "@/components/discharge-report-dialog"
 import { AccessGate } from "@/components/access-gate"
 import { useSubscription } from "@/components/subscription-provider"
+import { generateDischargeTicket } from "@/lib/generate-discharge-ticket"
+import type { DischargeTicketData } from "@/lib/generate-discharge-ticket"
+import { logActivity } from "@/lib/activity-logger"
 import type { Discharge, CharcoalType } from "@/types/database"
 
 const PAGE_SIZE = 20
@@ -81,7 +96,7 @@ export default function DescargasPage() {
 }
 
 function DescargasContent() {
-  const { canSeeFinancials, hasAccess } = useSubscription()
+  const { canSeeFinancials, hasAccess, isAdmin } = useSubscription()
   const showReports = hasAccess("relatorios")
   const defaultRange = useMemo(() => getDefaultDateRange(), [])
 
@@ -105,6 +120,9 @@ function DescargasContent() {
   // Form dialog
   const [formOpen, setFormOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const [editDischarge, setEditDischarge] = useState<DischargeWithSupplier | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<DischargeWithSupplier | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Summary
   const [summary, setSummary] = useState({
@@ -477,6 +495,9 @@ function DescargasContent() {
                         onToggle={() => setExpandedId(isExpanded ? null : d.id)}
                         unit={unit}
                         showFinancials={canSeeFinancials}
+                        isAdmin={isAdmin}
+                        onEdit={(disc) => { setEditDischarge(disc); setFormOpen(true) }}
+                        onDelete={(disc) => setDeleteTarget(disc)}
                       />
                     )
                   })
@@ -521,8 +542,11 @@ function DescargasContent() {
       {/* Discharge Form Dialog */}
       <DischargeForm
         open={formOpen}
-        onOpenChange={setFormOpen}
+        onOpenChange={(open) => { setFormOpen(open); if (!open) setEditDischarge(null) }}
+        editDischarge={editDischarge}
         onSuccess={() => {
+          setFormOpen(false)
+          setEditDischarge(null)
           fetchDischarges()
           fetchSummary()
         }}
@@ -533,6 +557,61 @@ function DescargasContent() {
         open={reportOpen}
         onOpenChange={setReportOpen}
       />
+
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir descarga</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir a descarga
+            {deleteTarget?.discharge_number ? ` Nº ${String(deleteTarget.discharge_number).padStart(4, "0")}` : ""}
+            {deleteTarget?.supplier?.name ? ` de ${deleteTarget.supplier.name}` : ""}?
+            Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (!deleteTarget) return
+                setDeleting(true)
+                const supabase = createClient()
+                const { data: { user } } = await supabase.auth.getUser()
+
+                await supabase.from("interactions").update({ resolved_discharge_id: null }).eq("resolved_discharge_id", deleteTarget.id)
+                await supabase.from("queue_entries").update({ discharge_id: null }).eq("discharge_id", deleteTarget.id)
+                await supabase.from("activity_log").delete().eq("discharge_id", deleteTarget.id)
+
+                const { error } = await supabase.from("discharges").delete().eq("id", deleteTarget.id)
+                if (error) {
+                  toast.error("Erro ao excluir descarga.")
+                } else {
+                  logActivity({
+                    supabase,
+                    eventType: "discharge_deleted",
+                    userId: user?.id,
+                    supplierId: deleteTarget.supplier_id,
+                    title: deleteTarget.supplier?.name || "Fornecedor",
+                    subtitle: `Nº ${deleteTarget.discharge_number || "—"} — ${deleteTarget.volume_mdc} MDC`,
+                    metadata: { discharge_number: deleteTarget.discharge_number, volume_mdc: deleteTarget.volume_mdc },
+                  })
+                  toast.success("Descarga excluída.")
+                  fetchDischarges()
+                  fetchSummary()
+                }
+                setDeleting(false)
+                setDeleteTarget(null)
+              }}
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -543,12 +622,18 @@ function DischargeRow({
   onToggle,
   unit,
   showFinancials,
+  isAdmin,
+  onEdit,
+  onDelete,
 }: {
   discharge: DischargeWithSupplier
   isExpanded: boolean
   onToggle: () => void
   unit: VolumeUnit
   showFinancials: boolean
+  isAdmin: boolean
+  onEdit: (d: DischargeWithSupplier) => void
+  onDelete: (d: DischargeWithSupplier) => void
 }) {
   const moisture = Number(d.moisture_percent)
   const finesPercent = Number(d.fines_percent)
@@ -701,6 +786,33 @@ function DischargeRow({
                   <p className="font-medium">{d.notes}</p>
                 </div>
               )}
+              <div className="col-span-2 md:col-span-3 lg:col-span-4 flex items-center justify-between pt-2 border-t border-border/40">
+                <p className="text-xs text-muted-foreground">
+                  {d.discharge_number ? `Nº ${String(d.discharge_number).padStart(4, "0")}` : ""}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={(e) => { e.stopPropagation(); onEdit(d) }}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={(e) => { e.stopPropagation(); onDelete(d) }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Excluir
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
           </TableCell>
         </TableRow>

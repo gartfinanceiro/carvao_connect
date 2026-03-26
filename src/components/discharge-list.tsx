@@ -14,6 +14,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
   ChevronDown,
   ChevronUp,
   ChevronLeft,
@@ -22,14 +29,19 @@ import {
   Scale,
   Package,
   Printer,
+  Pencil,
+  Trash2,
   Loader2,
 } from "lucide-react"
 import { formatCurrency, convertVolume, convertPrice, unitLabel, priceUnitLabel } from "@/lib/utils"
 import type { VolumeUnit } from "@/lib/utils"
 import { UnitToggle } from "@/components/unit-toggle"
 import { useSubscription } from "@/components/subscription-provider"
+import { DischargeForm } from "@/components/discharge-form"
 import { generateDischargeTicket } from "@/lib/generate-discharge-ticket"
 import type { DischargeTicketData } from "@/lib/generate-discharge-ticket"
+import { logActivity } from "@/lib/activity-logger"
+import { toast } from "sonner"
 import type { Discharge } from "@/types/database"
 
 interface DischargeListProps {
@@ -72,13 +84,19 @@ function DensityBadge({ value }: { value: number | null }) {
 }
 
 export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
-  const { canSeeFinancials } = useSubscription()
+  const { canSeeFinancials, isAdmin } = useSubscription()
   const [discharges, setDischarges] = useState<Discharge[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [unit, setUnit] = useState<VolumeUnit>("mdc")
+
+  // Edit/Delete
+  const [editDischarge, setEditDischarge] = useState<Discharge | null>(null)
+  const [editFormOpen, setEditFormOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<Discharge | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const fetchDischarges = useCallback(async () => {
     setLoading(true)
@@ -274,6 +292,9 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
                         }
                         unit={unit}
                         showFinancials={canSeeFinancials}
+                        isAdmin={isAdmin}
+                        onEdit={(disc) => { setEditDischarge(disc); setEditFormOpen(true) }}
+                        onDelete={(disc) => setDeleteTarget(disc)}
                       />
                     )
                   })}
@@ -314,6 +335,72 @@ export function DischargeList({ supplierId, refreshKey }: DischargeListProps) {
           </>
         )}
       </CardContent>
+
+      {/* Edit Form */}
+      <DischargeForm
+        open={editFormOpen}
+        onOpenChange={(open) => { setEditFormOpen(open); if (!open) setEditDischarge(null) }}
+        supplierId={supplierId}
+        editDischarge={editDischarge}
+        onSuccess={() => { setEditFormOpen(false); setEditDischarge(null); fetchDischarges(); fetchSummary() }}
+      />
+
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Excluir descarga</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Tem certeza que deseja excluir a descarga
+            {deleteTarget?.discharge_number ? ` Nº ${String(deleteTarget.discharge_number).padStart(4, "0")}` : ""}?
+            Esta ação não pode ser desfeita.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (!deleteTarget) return
+                setDeleting(true)
+                const supabase = createClient()
+                const { data: { user } } = await supabase.auth.getUser()
+
+                // Clear references
+                await supabase.from("interactions").update({ resolved_discharge_id: null }).eq("resolved_discharge_id", deleteTarget.id)
+                await supabase.from("queue_entries").update({ discharge_id: null }).eq("discharge_id", deleteTarget.id)
+                await supabase.from("activity_log").delete().eq("discharge_id", deleteTarget.id)
+
+                // Delete
+                const { error } = await supabase.from("discharges").delete().eq("id", deleteTarget.id)
+                if (error) {
+                  toast.error("Erro ao excluir descarga.")
+                } else {
+                  // Log deletion for audit
+                  logActivity({
+                    supabase,
+                    eventType: "discharge_deleted",
+                    userId: user?.id,
+                    supplierId,
+                    title: deleteTarget.supplier?.name || "Fornecedor",
+                    subtitle: `Nº ${deleteTarget.discharge_number || "—"} — ${deleteTarget.volume_mdc} MDC`,
+                    metadata: { discharge_number: deleteTarget.discharge_number, volume_mdc: deleteTarget.volume_mdc },
+                  })
+                  toast.success("Descarga excluída.")
+                  fetchDischarges()
+                  fetchSummary()
+                }
+                setDeleting(false)
+                setDeleteTarget(null)
+              }}
+            >
+              {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }
@@ -325,6 +412,9 @@ function ExpandableRow({
   onToggle,
   unit,
   showFinancials,
+  isAdmin,
+  onEdit,
+  onDelete,
 }: {
   discharge: Discharge
   supplierId: string
@@ -332,6 +422,9 @@ function ExpandableRow({
   onToggle: () => void
   unit: VolumeUnit
   showFinancials: boolean
+  isAdmin: boolean
+  onEdit: (d: Discharge) => void
+  onDelete: (d: Discharge) => void
 }) {
   const [printing, setPrinting] = useState(false)
 
@@ -576,16 +669,38 @@ function ExpandableRow({
                   Registrado em {formatDateTimeBR(discharge.created_at)}
                   {discharge.discharge_number ? ` · Nº ${String(discharge.discharge_number).padStart(4, "0")}` : ""}
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs gap-1.5"
-                  onClick={handlePrintTicket}
-                  disabled={printing}
-                >
-                  {printing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Printer className="h-3 w-3" />}
-                  Imprimir ticket
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={(e) => { e.stopPropagation(); onEdit(discharge) }}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Editar
+                  </Button>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs gap-1.5 text-red-600 border-red-200 hover:bg-red-50"
+                      onClick={(e) => { e.stopPropagation(); onDelete(discharge) }}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      Excluir
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs gap-1.5"
+                    onClick={handlePrintTicket}
+                    disabled={printing}
+                  >
+                    {printing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Printer className="h-3 w-3" />}
+                    Imprimir ticket
+                  </Button>
+                </div>
               </div>
             </div>
           </TableCell>

@@ -547,14 +547,23 @@ function FilaContent() {
         onSuccess={fetchEntries}
       />
 
-      {selectedQueueId && (
-        <DischargeForm
-          open={dischargeFormOpen}
-          onOpenChange={setDischargeFormOpen}
-          supplierId={entries.find((e) => e.id === selectedQueueId)?.supplier_id}
-          onSuccess={handleDischargeSuccess}
-        />
-      )}
+      {selectedQueueId && (() => {
+        const queueEntry = entries.find((e) => e.id === selectedQueueId)
+        return (
+          <DischargeForm
+            open={dischargeFormOpen}
+            onOpenChange={setDischargeFormOpen}
+            supplierId={queueEntry?.supplier_id}
+            queueEntry={queueEntry ? {
+              id: queueEntry.id,
+              truck_plate: queueEntry.truck_plate,
+              driver_name: queueEntry.driver_name,
+              estimated_volume_mdc: queueEntry.estimated_volume_mdc,
+            } : null}
+            onSuccess={handleDischargeSuccess}
+          />
+        )
+      })()}
 
       {/* GCA Dialog */}
       <Dialog open={gcaDialogOpen} onOpenChange={setGcaDialogOpen}>

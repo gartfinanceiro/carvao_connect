@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase/client"
 import Link from "next/link"
 import {
-  Search, Phone, Truck, CalendarCheck, XCircle, CalendarClock, UserPlus, ChevronDown, Loader2,
+  Search, Phone, Truck, CalendarCheck, XCircle, CalendarClock, UserPlus, Trash2, ChevronDown, Loader2,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -25,6 +25,7 @@ interface ActivityItem {
 const EVENT_CONFIG: Record<ActivityEventType, { icon: typeof Phone; color: string; bg: string; label: string }> = {
   interaction_registered: { icon: Phone, color: "text-[#1B4332]", bg: "bg-[#E8F5E9]", label: "Interação" },
   discharge_registered: { icon: Truck, color: "text-emerald-700", bg: "bg-emerald-50", label: "Descarga" },
+  discharge_deleted: { icon: Trash2, color: "text-red-600", bg: "bg-red-50", label: "Exclusão" },
   load_scheduled: { icon: CalendarCheck, color: "text-blue-700", bg: "bg-blue-50", label: "Agendamento" },
   load_cancelled: { icon: XCircle, color: "text-red-600", bg: "bg-red-50", label: "Cancelamento" },
   load_postponed: { icon: CalendarClock, color: "text-amber-700", bg: "bg-amber-50", label: "Adiamento" },

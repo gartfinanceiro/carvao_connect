@@ -14,7 +14,7 @@ const NAV_ITEMS: { href: string; label: string; icon: typeof LayoutDashboard; mo
   { href: "/fornecedores", label: "Fornecedores", icon: Users, module: "fornecedores" },
   { href: "/descargas", label: "Descargas", icon: Truck, module: "descargas" },
   { href: "/fila", label: "Fila", icon: ClipboardList, module: "fila" },
-  { href: "/configuracoes", label: "Config", icon: Settings, module: "configuracoes" },
+  { href: "/configuracoes/conta", label: "Config", icon: Settings, module: "configuracoes" },
 ]
 
 export function MobileNav() {
@@ -60,7 +60,9 @@ export function MobileNav() {
           const isActive =
             item.href === "/"
               ? pathname === "/"
-              : pathname.startsWith(item.href)
+              : item.href.startsWith("/configuracoes")
+                ? pathname.startsWith("/configuracoes")
+                : pathname.startsWith(item.href)
           const showBadge = (item.href === "/fila" && queueCount > 0) || (item.href === "/dashboard" && alertCount > 0)
           const badgeCount = item.href === "/fila" ? queueCount : alertCount
 

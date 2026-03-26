@@ -20,18 +20,28 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent } from "@/components/ui/card"
-import { Loader2, Truck } from "lucide-react"
+import { Loader2, Truck, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 import { calculateMoistureWeightDeduction, calculateImpurityDeduction, calculateAdjustedDensity, findPriceByDensity, DEFAULT_POLICY } from "@/lib/discount-calculator"
-import type { DiscountPolicy, PersonType, PricingUnit } from "@/types/database"
+import type { Discharge, DiscountPolicy, PersonType, PricingUnit } from "@/types/database"
 import { logActivity } from "@/lib/activity-logger"
+import { getSupplierSuggestions } from "@/lib/supplier-suggestions"
+
+export interface QueueEntryData {
+  id: string
+  truck_plate?: string | null
+  driver_name?: string | null
+  estimated_volume_mdc?: number | null
+}
 
 interface DischargeFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   supplierId?: string
   interactionId?: string
+  editDischarge?: Discharge | null
+  queueEntry?: QueueEntryData | null
   onSuccess: () => void
 }
 
@@ -63,7 +73,26 @@ function getToday(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function getInitialFormData(supplierId?: string): FormData {
+function getInitialFormData(supplierId?: string, discharge?: Discharge | null): FormData {
+  if (discharge) {
+    return {
+      supplier_id: discharge.supplier_id,
+      discharge_date: discharge.discharge_date,
+      volume_mdc: String(discharge.volume_mdc),
+      price_per_mdc: String(discharge.price_per_mdc),
+      truck_plate: discharge.truck_plate || "",
+      invoice_number: discharge.invoice_number || "",
+      forest_guide: discharge.forest_guide || "",
+      gross_weight_kg: discharge.gross_weight_kg ? String(discharge.gross_weight_kg) : "",
+      tare_weight_kg: discharge.tare_weight_kg ? String(discharge.tare_weight_kg) : "",
+      net_weight_kg: discharge.net_weight_kg ? String(discharge.net_weight_kg) : "",
+      moisture_percent: String(discharge.moisture_percent || 0),
+      fines_kg: String(discharge.fines_kg || 0),
+      deductions: String(discharge.deductions || 0),
+      funrural_percent: String(discharge.funrural_percent || 0),
+      notes: discharge.notes || "",
+    }
+  }
   return {
     supplier_id: supplierId ?? "",
     discharge_date: getToday(),
@@ -88,14 +117,18 @@ export function DischargeForm({
   onOpenChange,
   supplierId,
   interactionId,
+  editDischarge,
+  queueEntry,
   onSuccess,
 }: DischargeFormProps) {
-  const [form, setForm] = useState<FormData>(getInitialFormData(supplierId))
+  const isEdit = !!editDischarge
+  const [form, setForm] = useState<FormData>(getInitialFormData(supplierId, editDischarge))
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [loadingSuppliers, setLoadingSuppliers] = useState(false)
   const [discountPolicy, setDiscountPolicy] = useState<DiscountPolicy | null>(null)
+  const [suggestedFields, setSuggestedFields] = useState<Set<keyof FormData>>(new Set())
 
   const fetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true)
@@ -127,17 +160,65 @@ export function DischargeForm({
 
   useEffect(() => {
     if (open) {
+      setForm(getInitialFormData(supplierId, editDischarge))
+      setErrors({})
+      setSuggestedFields(new Set())
       fetchSuppliers()
       fetchDiscountPolicy()
       setPriceSuggested(false)
       setLastPriceSuggestion(null)
+      setPricingUnit(editDischarge?.pricing_unit || "mdc")
     }
-  }, [open, fetchSuppliers, fetchDiscountPolicy])
+  }, [open, editDischarge, supplierId, fetchSuppliers, fetchDiscountPolicy]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-fill from queue entry + supplier suggestions
+  const applySuggestions = useCallback(async (targetSupplierId: string) => {
+    if (isEdit) return
+    const supabase = createClient()
+    try {
+      const suggestions = await getSupplierSuggestions(supabase, targetSupplierId)
+      setForm((prev) => {
+        const next = { ...prev }
+        const suggested = new Set<keyof FormData>()
+
+        // Queue entry data takes priority
+        if (queueEntry?.truck_plate && !prev.truck_plate) {
+          next.truck_plate = queueEntry.truck_plate.toUpperCase()
+          suggested.add("truck_plate")
+        } else if (suggestions.truck_plate && !prev.truck_plate) {
+          next.truck_plate = suggestions.truck_plate.toUpperCase()
+          suggested.add("truck_plate")
+        }
+
+        if (queueEntry?.estimated_volume_mdc && !prev.volume_mdc) {
+          next.volume_mdc = String(queueEntry.estimated_volume_mdc)
+          suggested.add("volume_mdc")
+        } else if (suggestions.avg_volume_mdc && !prev.volume_mdc) {
+          next.volume_mdc = String(suggestions.avg_volume_mdc)
+          suggested.add("volume_mdc")
+        }
+
+        setSuggestedFields(suggested)
+        return next
+      })
+    } catch {
+      // fire-and-forget
+    }
+  }, [isEdit, queueEntry])
+
+  useEffect(() => {
+    if (!open || isEdit) return
+    const sid = supplierId || form.supplier_id
+    if (sid) {
+      applySuggestions(sid)
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
-      setForm(getInitialFormData(supplierId))
+      setForm(getInitialFormData(supplierId, editDischarge))
       setErrors({})
+      setSuggestedFields(new Set())
     }
     onOpenChange(nextOpen)
   }
@@ -158,6 +239,14 @@ export function DischargeForm({
       return next
     })
     setErrors((prev) => ({ ...prev, [key]: undefined }))
+    // Clear suggestion indicator when user manually edits a field
+    if (suggestedFields.has(key)) {
+      setSuggestedFields((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        return next
+      })
+    }
   }
 
   // ── Computed values ──────────────────────────────────────────────
@@ -357,27 +446,34 @@ export function DischargeForm({
       created_by: user?.id ?? null,
     }
 
-    const { error } = await supabase.from("discharges").insert(payload)
-
-    if (error) {
-      console.error("Erro ao registrar descarga:", error)
-      toast.error("Erro ao registrar descarga.")
-      setLoading(false)
-      return
+    if (isEdit && editDischarge) {
+      const { error } = await supabase.from("discharges").update(payload).eq("id", editDischarge.id)
+      if (error) {
+        console.error("Erro ao atualizar descarga:", error)
+        toast.error("Erro ao atualizar descarga.")
+        setLoading(false)
+        return
+      }
+      toast.success("Descarga atualizada!")
+    } else {
+      const { error } = await supabase.from("discharges").insert(payload)
+      if (error) {
+        console.error("Erro ao registrar descarga:", error)
+        toast.error("Erro ao registrar descarga.")
+        setLoading(false)
+        return
+      }
+      logActivity({
+        supabase,
+        eventType: "discharge_registered",
+        userId: user?.id,
+        supplierId: form.supplier_id,
+        title: supplierLabel || "Fornecedor",
+        subtitle: `${form.volume_mdc} MDC${grossTotal ? ` — R$ ${grossTotal.toLocaleString("pt-BR")}` : ""}`,
+        metadata: { volume_mdc: Number(form.volume_mdc), net_total: grossTotal, pricing_unit: pricingUnit },
+      })
+      toast.success("Descarga registrada com sucesso!")
     }
-
-    // Log activity
-    logActivity({
-      supabase,
-      eventType: "discharge_registered",
-      userId: user?.id,
-      supplierId: form.supplier_id,
-      title: supplierLabel || "Fornecedor",
-      subtitle: `${form.volume_mdc} MDC${grossTotal ? ` — R$ ${grossTotal.toLocaleString("pt-BR")}` : ""}`,
-      metadata: { volume_mdc: Number(form.volume_mdc), net_total: grossTotal, pricing_unit: pricingUnit },
-    })
-
-    toast.success("Descarga registrada com sucesso!")
     setLoading(false)
     onOpenChange(false)
     onSuccess()
@@ -392,7 +488,9 @@ export function DischargeForm({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Truck className="h-5 w-5" />
-            Registrar descarga
+            {isEdit && editDischarge?.discharge_number
+              ? `Editar descarga Nº ${String(editDischarge.discharge_number).padStart(4, "0")}`
+              : isEdit ? "Editar descarga" : "Registrar descarga"}
           </DialogTitle>
         </DialogHeader>
 
@@ -411,7 +509,10 @@ export function DischargeForm({
                 ) : (
                   <Select
                     value={form.supplier_id}
-                    onValueChange={(v) => updateField("supplier_id", v ?? "")}
+                    onValueChange={(v) => {
+                      updateField("supplier_id", v ?? "")
+                      if (v) applySuggestions(v)
+                    }}
                     disabled={loadingSuppliers}
                   >
                     <SelectTrigger className="w-full">
@@ -464,24 +565,51 @@ export function DischargeForm({
                 {errors.volume_mdc && (
                   <p className="text-xs text-destructive">{errors.volume_mdc}</p>
                 )}
+                {suggestedFields.has("volume_mdc") && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Sugerido com base no histórico
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price_per_mdc">
-                  Preço (R$/{pricingUnit === "ton" ? "ton" : "MDC"}) *
-                  {pricingUnit === "ton" && (
-                    <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">TON</span>
-                  )}
-                </Label>
-                <Input
-                  id="price_per_mdc"
-                  type="number"
-                  value={form.price_per_mdc}
-                  onChange={(e) => updateField("price_per_mdc", e.target.value)}
-                  placeholder={pricingUnit === "ton" ? "ex: 1300.00" : "ex: 290.00"}
-                  step="0.01"
-                  min={0}
-                />
+                <Label htmlFor="price_per_mdc">Preço *</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="price_per_mdc"
+                    type="number"
+                    value={form.price_per_mdc}
+                    onChange={(e) => updateField("price_per_mdc", e.target.value)}
+                    placeholder={pricingUnit === "ton" ? "ex: 1300.00" : "ex: 290.00"}
+                    className="flex-1"
+                    step="0.01"
+                    min={0}
+                  />
+                  <div className="flex rounded-lg border border-border overflow-hidden h-8 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPricingUnit("mdc")}
+                      className={`px-3 text-xs font-medium transition-colors ${
+                        pricingUnit === "mdc"
+                          ? "bg-[#1B4332] text-white"
+                          : "bg-white text-muted-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      R$/MDC
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPricingUnit("ton")}
+                      className={`px-3 text-xs font-medium transition-colors border-l border-border ${
+                        pricingUnit === "ton"
+                          ? "bg-[#1B4332] text-white"
+                          : "bg-white text-muted-foreground hover:bg-muted/50"
+                      }`}
+                    >
+                      R$/ton
+                    </button>
+                  </div>
+                </div>
                 {errors.price_per_mdc && (
                   <p className="text-xs text-destructive">{errors.price_per_mdc}</p>
                 )}
@@ -495,13 +623,18 @@ export function DischargeForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="truck_plate">Placa do caminhao</Label>
+                <Label htmlFor="truck_plate">Placa do caminhão</Label>
                 <Input
                   id="truck_plate"
                   value={form.truck_plate}
                   onChange={(e) => updateField("truck_plate", e.target.value.toUpperCase())}
                   placeholder="ex: HCF9J69"
                 />
+                {suggestedFields.has("truck_plate") && (
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Sparkles className="h-3 w-3" /> Sugerido com base no histórico
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -757,7 +890,7 @@ export function DischargeForm({
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Registrar descarga
+              {isEdit ? "Salvar alterações" : "Registrar descarga"}
             </Button>
           </div>
         </form>
