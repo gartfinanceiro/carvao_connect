@@ -25,6 +25,7 @@ import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
 import { calculateMoistureWeightDeduction, calculateImpurityDeduction, calculateAdjustedDensity, findPriceByDensity, DEFAULT_POLICY } from "@/lib/discount-calculator"
 import type { DiscountPolicy, PersonType, PricingUnit } from "@/types/database"
+import { logActivity } from "@/lib/activity-logger"
 
 interface DischargeFormProps {
   open: boolean
@@ -364,6 +365,17 @@ export function DischargeForm({
       setLoading(false)
       return
     }
+
+    // Log activity
+    logActivity({
+      supabase,
+      eventType: "discharge_registered",
+      userId: user?.id,
+      supplierId: form.supplier_id,
+      title: supplierLabel || "Fornecedor",
+      subtitle: `${form.volume_mdc} MDC${grossTotal ? ` — R$ ${grossTotal.toLocaleString("pt-BR")}` : ""}`,
+      metadata: { volume_mdc: Number(form.volume_mdc), net_total: grossTotal, pricing_unit: pricingUnit },
+    })
 
     toast.success("Descarga registrada com sucesso!")
     setLoading(false)

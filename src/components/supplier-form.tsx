@@ -24,6 +24,7 @@ import { toast } from "sonner"
 import { UF_OPTIONS } from "@/lib/labels"
 import { validateDocument, validatePhone } from "@/lib/utils"
 import type { Supplier, PersonType } from "@/types/database"
+import { logActivity } from "@/lib/activity-logger"
 
 interface SupplierFormProps {
   open: boolean
@@ -217,6 +218,17 @@ export function SupplierForm({
         return
       }
       toast.success("Fornecedor criado com sucesso!")
+
+      // Log activity
+      const { data: { user } } = await supabase.auth.getUser()
+      logActivity({
+        supabase,
+        eventType: "supplier_created",
+        userId: user?.id,
+        title: form.name.trim(),
+        subtitle: [form.city.trim(), form.state].filter(Boolean).join("/") + (form.person_type === "pf" ? " — Pessoa Física" : " — Pessoa Jurídica"),
+        metadata: { person_type: form.person_type, city: form.city.trim(), state: form.state },
+      })
     }
 
     setLoading(false)

@@ -38,6 +38,7 @@ import { convertVolume, unitLabel } from "@/lib/utils"
 import type { VolumeUnit } from "@/lib/utils"
 import { UnitToggle } from "@/components/unit-toggle"
 import type { ContactType, ContactResult, NextStepType } from "@/types/database"
+import { logActivity } from "@/lib/activity-logger"
 
 interface FeedProps {
   userName: string
@@ -348,15 +349,22 @@ export function Feed({ userName }: FeedProps) {
   }
 
   async function handleScheduleQueueSuccess() {
+    const supabase = createClient()
     if (scheduleAlert) {
-      const supabase = createClient()
-      // Mark alert as done
       await supabase.from("alerts").update({ status: "concluido" }).eq("id", scheduleAlert.id)
-      // Mark interaction as scheduled
       if (scheduleAlert.interaction_id) {
         await supabase.from("interactions").update({
           promised_status: "agendada",
         }).eq("id", scheduleAlert.interaction_id)
+      }
+      if (scheduleAlert.supplier) {
+        logActivity({
+          supabase,
+          eventType: "load_scheduled",
+          title: scheduleAlert.supplier.name,
+          subtitle: "Carga agendada na fila",
+          supplierId: scheduleAlert.supplier.id,
+        })
       }
     }
     setScheduleQueueOpen(false)
@@ -396,6 +404,16 @@ export function Feed({ userName }: FeedProps) {
         promised_status: "cancelada",
         promised_cancel_reason: fullReason,
       }).eq("id", cancelAlert.interaction_id)
+    }
+    if (cancelAlert.supplier) {
+      logActivity({
+        supabase,
+        eventType: "load_cancelled",
+        title: cancelAlert.supplier.name,
+        subtitle: fullReason,
+        supplierId: cancelAlert.supplier.id,
+        metadata: { reason: fullReason },
+      })
     }
     setCancelDialogOpen(false)
     setCancelAlert(null)
@@ -470,6 +488,17 @@ export function Feed({ userName }: FeedProps) {
     // Resolve current alert
     await supabase.from("alerts").update({ status: "concluido" }).eq("id", postponeAlert.id)
 
+    if (postponeAlert.supplier) {
+      logActivity({
+        supabase,
+        eventType: "load_postponed",
+        userId: user.id,
+        title: postponeAlert.supplier.name,
+        subtitle: `Adiada para ${newDateFormatted}`,
+        supplierId: postponeAlert.supplier.id,
+        metadata: { new_date: postponeDate },
+      })
+    }
     setPostponeDialogOpen(false)
     setPostponeAlert(null)
     fetchAlerts()

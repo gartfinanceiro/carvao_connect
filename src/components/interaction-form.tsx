@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import type { ContactType, ContactResult, NextStepType } from "@/types/database"
+import { logActivity } from "@/lib/activity-logger"
 
 interface InteractionFormProps {
   supplierId: string
@@ -229,6 +230,18 @@ export function InteractionForm({
         return
       }
     }
+
+    // Log activity
+    logActivity({
+      supabase,
+      eventType: "interaction_registered",
+      userId: user.id,
+      supplierId,
+      interactionId: insertedData?.id,
+      title: supplierName,
+      subtitle: `${contactTypeLabels[contactType!]} — ${contactResultLabels[result!]}`,
+      metadata: { contact_type: contactType, result, load_promised: loadPromised, promised_volume: loadPromised ? Number(promisedVolume) : null },
+    })
 
     toast.success(
       scheduleQueue && loadPromised
