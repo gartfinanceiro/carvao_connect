@@ -23,6 +23,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Loader2, Truck } from "lucide-react"
 import { toast } from "sonner"
 import { formatCurrency } from "@/lib/utils"
+import { calculateMoistureWeightDeduction, calculateImpurityDeduction, calculateAdjustedDensity, findPriceByDensity, DEFAULT_POLICY } from "@/lib/discount-calculator"
+import type { DiscountPolicy, PersonType, PricingUnit } from "@/types/database"
 
 interface DischargeFormProps {
   open: boolean
@@ -35,6 +37,7 @@ interface DischargeFormProps {
 interface SupplierOption {
   id: string
   name: string
+  person_type?: PersonType
 }
 
 interface FormData {
@@ -51,6 +54,7 @@ interface FormData {
   moisture_percent: string
   fines_kg: string
   deductions: string
+  funrural_percent: string
   notes: string
 }
 
@@ -73,6 +77,7 @@ function getInitialFormData(supplierId?: string): FormData {
     moisture_percent: "0",
     fines_kg: "0",
     deductions: "0",
+    funrural_percent: "0",
     notes: "",
   }
 }
@@ -89,13 +94,14 @@ export function DischargeForm({
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<SupplierOption[]>([])
   const [loadingSuppliers, setLoadingSuppliers] = useState(false)
+  const [discountPolicy, setDiscountPolicy] = useState<DiscountPolicy | null>(null)
 
   const fetchSuppliers = useCallback(async () => {
     setLoadingSuppliers(true)
     const supabase = createClient()
     const { data, error } = await supabase
       .from("suppliers")
-      .select("id, name")
+      .select("id, name, person_type")
       .eq("status", "ativo")
       .order("name")
 
@@ -105,11 +111,27 @@ export function DischargeForm({
     setLoadingSuppliers(false)
   }, [])
 
+  const fetchDiscountPolicy = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("discount_policies")
+      .select("*")
+      .eq("is_active", true)
+      .maybeSingle()
+
+    if (data) {
+      setDiscountPolicy(data as DiscountPolicy)
+    }
+  }, [])
+
   useEffect(() => {
     if (open) {
       fetchSuppliers()
+      fetchDiscountPolicy()
+      setPriceSuggested(false)
+      setLastPriceSuggestion(null)
     }
-  }, [open, fetchSuppliers])
+  }, [open, fetchSuppliers, fetchDiscountPolicy])
 
   function handleOpenChange(nextOpen: boolean) {
     if (nextOpen) {
@@ -137,7 +159,9 @@ export function DischargeForm({
     setErrors((prev) => ({ ...prev, [key]: undefined }))
   }
 
-  // Computed values
+  // ── Computed values ──────────────────────────────────────────────
+  const policy = discountPolicy || DEFAULT_POLICY
+
   const netWeight = useMemo(() => {
     const val = Number(form.net_weight_kg)
     return val > 0 ? val : null
@@ -148,24 +172,99 @@ export function DischargeForm({
     return val > 0 ? val : null
   }, [form.volume_mdc])
 
+  const finesKg = useMemo(() => {
+    return Number(form.fines_kg) || 0
+  }, [form.fines_kg])
+
+  const moisturePercent = useMemo(() => {
+    return Number(form.moisture_percent) || 0
+  }, [form.moisture_percent])
+
+  // Desconto de umidade no peso (kg)
+  const moistureDeduction = useMemo(() => {
+    if (!netWeight) return { deductionKg: 0, rule: null }
+    return calculateMoistureWeightDeduction(moisturePercent, netWeight, policy.moisture_rules)
+  }, [netWeight, moisturePercent, policy.moisture_rules])
+
+  const grossWeight = useMemo(() => {
+    const val = Number(form.gross_weight_kg)
+    return val > 0 ? val : null
+  }, [form.gross_weight_kg])
+
+  // Impurity deduction with tolerance
+  const impurityResult = useMemo(() => {
+    if (!netWeight || finesKg <= 0) return null
+    return calculateImpurityDeduction(
+      finesKg,
+      grossWeight || netWeight,
+      netWeight,
+      policy.impurity_tolerance_percent ?? 0,
+      policy.impurity_discount_on ?? "net"
+    )
+  }, [finesKg, grossWeight, netWeight, policy.impurity_tolerance_percent, policy.impurity_discount_on])
+
+  const effectiveFinesKg = impurityResult?.deductionKg ?? finesKg
+
+  // Peso ajustado = líquido - umidade - impurezas (com tolerância)
+  const adjustedWeight = useMemo(() => {
+    if (!netWeight) return null
+    const adj = netWeight - moistureDeduction.deductionKg - effectiveFinesKg
+    return adj > 0 ? Math.round(adj * 100) / 100 : null
+  }, [netWeight, moistureDeduction.deductionKg, effectiveFinesKg])
+
+  // Densidade ajustada = peso ajustado / volume
   const density = useMemo(() => {
     if (netWeight && volume && volume > 0) {
-      return Math.round((netWeight / volume) * 100) / 100
+      return calculateAdjustedDensity(netWeight, effectiveFinesKg, volume, moistureDeduction.deductionKg)
     }
     return null
-  }, [netWeight, volume])
+  }, [netWeight, volume, effectiveFinesKg, moistureDeduction.deductionKg])
+
+  const selectedSupplier = useMemo(() => {
+    return suppliers.find((s) => s.id === form.supplier_id) ?? null
+  }, [suppliers, form.supplier_id])
+
+  const supplierLabel = selectedSupplier?.name ?? ""
+  const supplierPersonType = selectedSupplier?.person_type
 
   const price = useMemo(() => {
     const val = Number(form.price_per_mdc)
     return val > 0 ? val : null
   }, [form.price_per_mdc])
 
+  // Auto-suggest price based on density
+  const [priceSuggested, setPriceSuggested] = useState(false)
+  const [lastPriceSuggestion, setLastPriceSuggestion] = useState<number | null>(null)
+  const [pricingUnit, setPricingUnit] = useState<PricingUnit>("mdc")
+
+  useEffect(() => {
+    if (!discountPolicy || !density || density <= 0) return
+    const rules = discountPolicy.density_pricing_rules || []
+    if (rules.length === 0) return
+
+    const lookup = findPriceByDensity(rules, density, supplierPersonType)
+    if (!lookup) return
+
+    setPricingUnit(lookup.pricingUnit)
+
+    const currentPrice = Number(form.price_per_mdc) || 0
+    if (currentPrice === 0 || currentPrice === lastPriceSuggestion) {
+      setForm(prev => ({ ...prev, price_per_mdc: String(lookup.price) }))
+      setLastPriceSuggestion(lookup.price)
+      setPriceSuggested(true)
+    }
+  }, [density, discountPolicy, supplierPersonType]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const grossTotal = useMemo(() => {
-    if (volume && price) {
+    if (!price) return null
+    if (pricingUnit === "ton" && adjustedWeight && adjustedWeight > 0) {
+      return Math.round((adjustedWeight / 1000) * price * 100) / 100
+    }
+    if (volume) {
       return Math.round(volume * price * 100) / 100
     }
     return null
-  }, [volume, price])
+  }, [volume, price, pricingUnit, adjustedWeight])
 
   const deductions = useMemo(() => {
     const val = Number(form.deductions)
@@ -179,54 +278,16 @@ export function DischargeForm({
     return null
   }, [grossTotal, deductions])
 
-  // Auto-suggestion for deductions based on moisture/fines
-  const [lastSuggestion, setLastSuggestion] = useState<number | null>(null)
+  const funruralPercent = useMemo(() => {
+    return Number(form.funrural_percent) || 0
+  }, [form.funrural_percent])
 
-  const suggestion = useMemo(() => {
-    const moistureVal = Number(form.moisture_percent) || 0
-    const finesKgVal = Number(form.fines_kg) || 0
-    const netWeightVal = Number(form.net_weight_kg) || 0
-    const vol = Number(form.volume_mdc) || 0
-    const priceVal = Number(form.price_per_mdc) || 0
-
-    if (vol <= 0 || priceVal <= 0) return null
-
-    let moistureDeduction = 0
-    let finesDeduction = 0
-    const parts: string[] = []
-    const gross = vol * priceVal
-
-    if (moistureVal > 5) {
-      moistureDeduction = Math.round(((moistureVal - 5) * gross) / 100 * 100) / 100
-      parts.push(`Umidade ${moistureVal}%: -R$ ${moistureDeduction.toFixed(2)}`)
+  const funruralValue = useMemo(() => {
+    if (netTotal && funruralPercent > 0) {
+      return Math.round(netTotal * (funruralPercent / 100) * 100) / 100
     }
-
-    if (netWeightVal > 0 && finesKgVal > 0) {
-      const fp = (finesKgVal / netWeightVal) * 100
-      if (fp > 3) {
-        finesDeduction = Math.round(((fp - 3) * gross) / 100 * 100) / 100
-        parts.push(`Moinha ${fp.toFixed(1)}%: -R$ ${finesDeduction.toFixed(2)}`)
-      }
-    }
-
-    const total = Math.round((moistureDeduction + finesDeduction) * 100) / 100
-    return {
-      total,
-      breakdown: parts.length > 0 ? parts.join(" · ") : "Sem descontos aplicáveis",
-      hasSuggestion: total > 0,
-    }
-  }, [form.moisture_percent, form.fines_kg, form.net_weight_kg, form.volume_mdc, form.price_per_mdc])
-
-  // Auto-fill deductions when suggestion changes and user hasn't manually edited
-  useEffect(() => {
-    if (!suggestion || !suggestion.hasSuggestion) return
-    const currentDeductions = Number(form.deductions) || 0
-    // Auto-fill if deductions is 0 or matches the last suggestion
-    if (currentDeductions === 0 || currentDeductions === lastSuggestion) {
-      setForm(prev => ({ ...prev, deductions: String(suggestion.total) }))
-      setLastSuggestion(suggestion.total)
-    }
-  }, [suggestion]) // eslint-disable-line react-hooks/exhaustive-deps
+    return 0
+  }, [netTotal, funruralPercent])
 
   function validate(): boolean {
     const newErrors: Partial<Record<keyof FormData, string>> = {}
@@ -288,6 +349,9 @@ export function DischargeForm({
       moisture_percent: Number(form.moisture_percent) || 0,
       fines_kg: Number(form.fines_kg) || 0,
       deductions: Number(form.deductions) || 0,
+      funrural_percent: Number(form.funrural_percent) || 0,
+      funrural_value: funruralValue,
+      pricing_unit: pricingUnit,
       notes: form.notes.trim() || null,
       created_by: user?.id ?? null,
     }
@@ -307,10 +371,8 @@ export function DischargeForm({
     onSuccess()
   }
 
-  const supplierLabel = useMemo(() => {
-    const found = suppliers.find((s) => s.id === form.supplier_id)
-    return found?.name ?? ""
-  }, [suppliers, form.supplier_id])
+  // Has any weight deduction?
+  const hasWeightDeductions = moistureDeduction.deductionKg > 0 || effectiveFinesKg > 0
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -393,18 +455,30 @@ export function DischargeForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="price_per_mdc">Preco (R$/MDC) *</Label>
+                <Label htmlFor="price_per_mdc">
+                  Preço (R$/{pricingUnit === "ton" ? "ton" : "MDC"}) *
+                  {pricingUnit === "ton" && (
+                    <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">TON</span>
+                  )}
+                </Label>
                 <Input
                   id="price_per_mdc"
                   type="number"
                   value={form.price_per_mdc}
                   onChange={(e) => updateField("price_per_mdc", e.target.value)}
-                  placeholder="ex: 290.00"
+                  placeholder={pricingUnit === "ton" ? "ex: 1300.00" : "ex: 290.00"}
                   step="0.01"
                   min={0}
                 />
                 {errors.price_per_mdc && (
                   <p className="text-xs text-destructive">{errors.price_per_mdc}</p>
+                )}
+                {priceSuggested && density && Number(form.price_per_mdc) === lastPriceSuggestion && (
+                  <p className="text-xs text-purple-600">
+                    Preço sugerido pela densidade {density.toFixed(0)} kg/MDC
+                    {supplierPersonType ? ` (${supplierPersonType.toUpperCase()})` : ""}
+                    {pricingUnit === "ton" ? " — por tonelada" : ""}
+                  </p>
                 )}
               </div>
 
@@ -474,55 +548,82 @@ export function DischargeForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="net_weight_kg">Peso liquido (kg)</Label>
-                <Input
-                  id="net_weight_kg"
-                  type="number"
-                  value={form.net_weight_kg}
-                  onChange={(e) => updateField("net_weight_kg", e.target.value)}
-                  placeholder="Calculado automaticamente"
-                  step="0.01"
-                  min={0}
-                  readOnly={!!(form.gross_weight_kg && form.tare_weight_kg)}
-                  className={form.gross_weight_kg && form.tare_weight_kg ? "bg-muted" : ""}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>Densidade (kg/mdc)</Label>
-                <Input
-                  value={density !== null ? String(density) : ""}
-                  placeholder="Calculado automaticamente"
-                  readOnly
-                  className="bg-muted"
-                />
-              </div>
-
-              <div className="space-y-2">
                 <Label htmlFor="moisture_percent">Umidade (%)</Label>
                 <Input
                   id="moisture_percent"
                   type="number"
                   value={form.moisture_percent}
                   onChange={(e) => updateField("moisture_percent", e.target.value)}
-                  placeholder="ex: 2.5"
+                  placeholder="ex: 14.3"
                   step="0.01"
                   min={0}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="fines_kg">Moinha (kg)</Label>
+                <Label htmlFor="fines_kg">Impurezas (kg)</Label>
                 <Input
                   id="fines_kg"
                   type="number"
                   value={form.fines_kg}
                   onChange={(e) => updateField("fines_kg", e.target.value)}
-                  placeholder="ex: 150"
+                  placeholder="ex: 1500"
                   step="0.01"
                   min={0}
                 />
               </div>
+
+              {/* ── Breakdown de peso ──────────────────────────── */}
+              {netWeight && (
+                <Card className="bg-slate-50/80 border-slate-200/60">
+                  <CardContent className="pt-3 pb-3 space-y-1.5">
+                    <h4 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Cálculo de peso</h4>
+                    <div className="text-xs space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Peso líquido</span>
+                        <span className="font-medium">{netWeight.toLocaleString("pt-BR")} kg</span>
+                      </div>
+                      {moistureDeduction.deductionKg > 0 && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>Desc. umidade ({moisturePercent}% {moistureDeduction.rule?.type === "excess" ? "excedente" : "total"})</span>
+                          <span className="font-medium">-{moistureDeduction.deductionKg.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kg</span>
+                        </div>
+                      )}
+                      {finesKg > 0 && impurityResult && (
+                        impurityResult.withinTolerance ? (
+                          <div className="flex justify-between text-emerald-700">
+                            <span>Desc. impurezas ({impurityResult.finesPercent.toFixed(1)}% — tolerância {impurityResult.tolerancePercent}%)</span>
+                            <span className="font-medium">0 kg</span>
+                          </div>
+                        ) : (
+                          <div className="flex justify-between text-amber-700">
+                            <span>Desc. impurezas{impurityResult.tolerancePercent > 0 ? ` (${impurityResult.finesPercent.toFixed(1)}% — acima de ${impurityResult.tolerancePercent}%)` : ""}</span>
+                            <span className="font-medium">-{finesKg.toLocaleString("pt-BR")} kg</span>
+                          </div>
+                        )
+                      )}
+                      {finesKg > 0 && !impurityResult && (
+                        <div className="flex justify-between text-amber-700">
+                          <span>Desc. impurezas</span>
+                          <span className="font-medium">-{finesKg.toLocaleString("pt-BR")} kg</span>
+                        </div>
+                      )}
+                      {hasWeightDeductions && adjustedWeight && (
+                        <div className="flex justify-between pt-1 border-t border-slate-200/80 font-semibold">
+                          <span>Peso ajustado</span>
+                          <span>{adjustedWeight.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kg</span>
+                        </div>
+                      )}
+                      {density !== null && (
+                        <div className="flex justify-between pt-1 border-t border-slate-200/80">
+                          <span className="text-muted-foreground">Densidade ajustada</span>
+                          <span className="font-semibold text-[#1B4332]">{density.toFixed(2)} kg/MDC</span>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
 
@@ -539,46 +640,78 @@ export function DischargeForm({
                     {grossTotal !== null ? formatCurrency(grossTotal) : "—"}
                   </span>
                 </div>
+                {grossTotal !== null && price && (
+                  <p className="text-xs text-muted-foreground">
+                    {pricingUnit === "ton" && adjustedWeight
+                      ? `${(adjustedWeight / 1000).toFixed(2)} ton x ${formatCurrency(price)}/ton`
+                      : volume ? `${volume} MDC x ${formatCurrency(price)}/MDC` : ""}
+                  </p>
+                )}
                 <div className="flex items-center justify-between text-sm gap-4">
-                  <span className="text-muted-foreground">Descontos (R$)</span>
+                  <span className="text-muted-foreground">Descontos adicionais (R$)</span>
                   <Input
                     type="number"
                     value={form.deductions}
-                    onChange={(e) => {
-                      updateField("deductions", e.target.value)
-                      setLastSuggestion(null)
-                    }}
+                    onChange={(e) => updateField("deductions", e.target.value)}
                     className="w-32 text-right"
                     step="0.01"
                     min={0}
                   />
                 </div>
-                {suggestion && suggestion.hasSuggestion && Number(form.deductions) !== suggestion.total && (
-                  <div className="bg-amber-50/50 border border-amber-200/30 rounded-lg p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-amber-700">
-                        Sugestão: {suggestion.breakdown} = R$ {suggestion.total.toFixed(2)}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForm(prev => ({ ...prev, deductions: String(suggestion.total) }))
-                          setLastSuggestion(suggestion.total)
-                        }}
-                        className="text-xs text-amber-700 font-medium underline whitespace-nowrap hover:text-amber-800"
-                      >
-                        Aplicar
-                      </button>
+
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <span className="font-semibold text-[#333]">Valor líquido</span>
+                  <span className="text-lg font-bold text-[#333]">
+                    {netTotal !== null ? formatCurrency(netTotal) : "—"}
+                  </span>
+                </div>
+
+                {/* FUNRURAL checkbox */}
+                <div className="pt-2 border-t border-dashed border-border/60">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={funruralPercent > 0}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setForm(prev => ({ ...prev, funrural_percent: "1.5" }))
+                        } else {
+                          setForm(prev => ({ ...prev, funrural_percent: "0" }))
+                        }
+                      }}
+                      className="h-4 w-4 rounded border-gray-300 text-[#1B4332] focus:ring-[#1B4332] cursor-pointer"
+                    />
+                    <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">FUNRURAL</span>
+                  </label>
+                  {funruralPercent > 0 && (
+                    <div className="mt-2 ml-6 space-y-1.5">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-muted-foreground">Alíquota</span>
+                          <Input
+                            type="number"
+                            value={form.funrural_percent}
+                            onChange={(e) => updateField("funrural_percent", e.target.value)}
+                            className="w-16 h-7 text-xs text-right"
+                            step="0.1" min={0}
+                          />
+                          <span className="text-xs text-muted-foreground">%</span>
+                        </div>
+                        <span className="font-medium text-red-600">
+                          {funruralValue > 0 ? `-${formatCurrency(funruralValue)}` : "—"}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {suggestion && !suggestion.hasSuggestion && (Number(form.moisture_percent) > 0 || Number(form.fines_kg) > 0) && (
-                  <p className="text-xs text-muted-foreground">Sem descontos aplicáveis (umidade ≤ 5% e moinha ≤ 3%)</p>
-                )}
+                  )}
+                </div>
+
+                {/* Valor a pagar (final) */}
                 <div className="flex items-center justify-between pt-2 border-t">
                   <span className="font-semibold text-[#1B4332]">Valor a pagar</span>
                   <span className="text-xl font-bold text-[#1B4332]">
-                    {netTotal !== null ? formatCurrency(netTotal) : "—"}
+                    {netTotal !== null
+                      ? formatCurrency(netTotal - funruralValue)
+                      : "—"}
                   </span>
                 </div>
               </div>

@@ -133,7 +133,7 @@ export function generateDischargeReport(
     const summaryItems2 = [
       avgDensity !== null ? `Densidade média: ${avgDensity} kg/mdc` : null,
       avgMoisture !== null ? `Umidade média: ${avgMoisture}%` : null,
-      avgFines !== null ? `Moinha média: ${avgFines}%` : null,
+      avgFines !== null ? `Impurezas média: ${avgFines}%` : null,
     ].filter(Boolean) as string[]
 
     doc.text(summaryItems.join("   |   "), margin + 4, yPos)
@@ -147,7 +147,7 @@ export function generateDischargeReport(
   // Build columns
   const headers: string[] = ["Data", "Fornecedor", `Volume (${unitLabel(u)})`, "Densidade", `Preço (${priceUnitLabel(u)})`]
   if (options.columns.moisture) headers.push("Umidade")
-  if (options.columns.fines) headers.push("Moinha")
+  if (options.columns.fines) headers.push("Impurezas")
   headers.push("Bruto")
   if (options.columns.deductions) headers.push("Descontos")
   headers.push("Líquido")

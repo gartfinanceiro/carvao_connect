@@ -136,17 +136,47 @@ export function InteractionTimeline({
                 </div>
               )}
 
-              {/* Load promised */}
+              {/* Load promised with status */}
               {interaction.load_promised && (
-                <div className="mt-2 flex items-center gap-1.5 text-sm">
-                  <span>📦</span>
-                  <span className="font-medium">
-                    Carga prometida: {interaction.promised_volume} carga
-                    {(interaction.promised_volume ?? 0) > 1 ? "s" : ""} em{" "}
-                    {interaction.promised_date
-                      ? format(new Date(interaction.promised_date + "T12:00:00"), "dd/MM/yyyy")
-                      : "—"}
-                  </span>
+                <div className="mt-2 flex items-center gap-1.5 text-sm flex-wrap">
+                  {(!interaction.promised_status || interaction.promised_status === "pendente") && (
+                    <>
+                      <span>📦</span>
+                      <span className="font-medium text-amber-700">
+                        Carga pendente: {interaction.promised_volume} carga
+                        {(interaction.promised_volume ?? 0) > 1 ? "s" : ""} — prevista{" "}
+                        {interaction.promised_date
+                          ? format(new Date(interaction.promised_date + "T12:00:00"), "dd/MM/yyyy")
+                          : "—"}
+                      </span>
+                    </>
+                  )}
+                  {interaction.promised_status === "agendada" && (
+                    <>
+                      <span>📋</span>
+                      <span className="font-medium text-blue-700">Carga agendada</span>
+                    </>
+                  )}
+                  {interaction.promised_status === "entregue" && (
+                    <>
+                      <span>✅</span>
+                      <span className="font-medium text-emerald-700">Carga entregue</span>
+                    </>
+                  )}
+                  {interaction.promised_status === "cancelada" && (
+                    <>
+                      <span>❌</span>
+                      <span className="font-medium text-red-600">
+                        Cancelada{interaction.promised_cancel_reason ? ` — ${interaction.promised_cancel_reason}` : ""}
+                      </span>
+                    </>
+                  )}
+                  {interaction.promised_status === "adiada" && (
+                    <>
+                      <span>📅</span>
+                      <span className="font-medium text-muted-foreground">Adiada</span>
+                    </>
+                  )}
                 </div>
               )}
 

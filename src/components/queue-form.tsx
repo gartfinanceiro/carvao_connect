@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Loader2 } from "lucide-react"
+import { Loader2, FileCheck, FileX } from "lucide-react"
 import { toast } from "sonner"
 import { queueStatusLabels } from "@/lib/labels"
 import type { QueueEntryType, QueueStatus } from "@/types/database"
@@ -34,6 +34,7 @@ interface EditEntry {
   scheduled_date: string
   scheduled_time: string | null
   scheduled_position: number | null
+  gca_emitida?: boolean
   status: string
 }
 
@@ -41,6 +42,7 @@ interface QueueFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   defaultType?: QueueEntryType
+  defaultSupplierId?: string
   editEntry?: EditEntry | null
   onSuccess: () => void
 }
@@ -48,6 +50,7 @@ interface QueueFormProps {
 interface FormData {
   entry_type: QueueEntryType
   supplier_id: string
+  gca_emitida: boolean
   truck_plate: string
   driver_name: string
   estimated_volume_mdc: string
@@ -65,6 +68,7 @@ function getInitialFormData(defaultType: QueueEntryType = "fila"): FormData {
   return {
     entry_type: defaultType,
     supplier_id: "",
+    gca_emitida: false,
     truck_plate: "",
     driver_name: "",
     estimated_volume_mdc: "",
@@ -79,12 +83,17 @@ export function QueueForm({
   open,
   onOpenChange,
   defaultType = "fila",
+  defaultSupplierId,
   editEntry,
   onSuccess,
 }: QueueFormProps) {
   const isEditing = !!editEntry
-  const [form, setForm] = useState<FormData>(getInitialFormData(defaultType))
-  const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({})
+  const [form, setForm] = useState<FormData>(() => {
+    const initial = getInitialFormData(defaultType)
+    if (defaultSupplierId) initial.supplier_id = defaultSupplierId
+    return initial
+  })
+  const [errors, setErrors] = useState<Partial<Record<keyof FormData | "driver_name", string>>>({})
   const [loading, setLoading] = useState(false)
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [loadingSuppliers, setLoadingSuppliers] = useState(false)
@@ -146,6 +155,7 @@ export function QueueForm({
         setForm({
           entry_type: editEntry.entry_type,
           supplier_id: editEntry.supplier_id,
+          gca_emitida: editEntry.gca_emitida ?? false,
           truck_plate: editEntry.truck_plate || "",
           driver_name: editEntry.driver_name || "",
           estimated_volume_mdc: editEntry.estimated_volume_mdc ? String(editEntry.estimated_volume_mdc) : "",
@@ -155,13 +165,15 @@ export function QueueForm({
           status: editEntry.status as QueueStatus,
         })
       } else {
-        setForm(getInitialFormData(defaultType))
+        const initial = getInitialFormData(defaultType)
+        if (defaultSupplierId) initial.supplier_id = defaultSupplierId
+        setForm(initial)
       }
       setErrors({})
       setLastTruckPlate("")
       setAverageVolume(null)
     }
-  }, [open, fetchSuppliers, defaultType, editEntry])
+  }, [open, fetchSuppliers, defaultType, defaultSupplierId, editEntry])
 
   useEffect(() => {
     if (form.supplier_id) {
@@ -188,7 +200,8 @@ export function QueueForm({
     const newErrors: Partial<Record<keyof FormData, string>> = {}
 
     if (!form.supplier_id) newErrors.supplier_id = "Fornecedor é obrigatório"
-    if (!form.truck_plate) newErrors.truck_plate = "Placa do caminhão é obrigatória"
+    if (form.gca_emitida && !form.truck_plate.trim()) newErrors.truck_plate = "Placa é obrigatória quando GCA emitida"
+    if (form.gca_emitida && !form.driver_name.trim()) newErrors.driver_name = "Motorista é obrigatório quando GCA emitida"
     if (!form.estimated_volume_mdc) {
       newErrors.estimated_volume_mdc = "Volume estimado é obrigatório"
     } else if (Number(form.estimated_volume_mdc) <= 0) {
@@ -237,6 +250,7 @@ export function QueueForm({
       const entryData = {
         supplier_id: form.supplier_id,
         entry_type: form.entry_type,
+        gca_emitida: form.gca_emitida,
         truck_plate: form.truck_plate || null,
         driver_name: form.driver_name || null,
         estimated_volume_mdc: Number(form.estimated_volume_mdc) || null,
@@ -281,7 +295,7 @@ export function QueueForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEditing
@@ -338,11 +352,11 @@ export function QueueForm({
           <div className="space-y-2">
             <Label htmlFor="supplier">Fornecedor</Label>
             <Select value={form.supplier_id} onValueChange={(value) => updateField("supplier_id", value ?? "")}>
-              <SelectTrigger id="supplier" className="h-11 rounded-xl">
+              <SelectTrigger id="supplier" className="h-11 w-full rounded-xl">
                 <SelectValue placeholder="Selecione um fornecedor">
                   {() => {
                     if (selectedSupplier) {
-                      return `${selectedSupplier.name}${selectedSupplier.city ? ` - ${selectedSupplier.city}` : ""}`
+                      return `${selectedSupplier.name}${selectedSupplier.dcf_number ? ` — DCF ${selectedSupplier.dcf_number}` : ""}${selectedSupplier.city ? ` — ${selectedSupplier.city}` : ""}`
                     }
                     if (form.supplier_id && loadingSuppliers) {
                       return "Carregando..."
@@ -351,10 +365,13 @@ export function QueueForm({
                   }}
                 </SelectValue>
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="min-w-[min(28rem,calc(100vw-2rem))]">
                 {suppliers.map((supplier) => (
                   <SelectItem key={supplier.id} value={supplier.id}>
-                    {supplier.name} {supplier.city && `- ${supplier.city}`}
+                    {supplier.name}
+                    {supplier.dcf_number && (
+                      <span className="text-muted-foreground ml-1">— DCF {supplier.dcf_number}</span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -362,12 +379,48 @@ export function QueueForm({
             {errors.supplier_id && <p className="text-xs text-red-500">{errors.supplier_id}</p>}
           </div>
 
+          {/* GCA toggle */}
+          <div className="space-y-2">
+            <Label>GCA (Guia de Controle Ambiental)</Label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setForm(prev => ({ ...prev, gca_emitida: false }))}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-medium transition-all ${
+                  !form.gca_emitida
+                    ? "bg-amber-50 border-2 border-amber-300 text-amber-800"
+                    : "bg-white border border-[#E5E5E5] text-[#737373]"
+                }`}
+              >
+                <FileX className="h-4 w-4" />
+                Não emitida
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(prev => ({ ...prev, gca_emitida: true }))}
+                className={`flex-1 flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-medium transition-all ${
+                  form.gca_emitida
+                    ? "bg-emerald-50 border-2 border-emerald-300 text-emerald-800"
+                    : "bg-white border border-[#E5E5E5] text-[#737373]"
+                }`}
+              >
+                <FileCheck className="h-4 w-4" />
+                Emitida
+              </button>
+            </div>
+            {!form.gca_emitida && (
+              <p className="text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                Placa e motorista poderão ser informados depois na aba Fila, quando a GCA for emitida.
+              </p>
+            )}
+          </div>
+
           {/* Truck info section */}
           <div className="space-y-4">
             <h3 className="font-semibold text-sm text-[#1B4332]">Informações do caminhão</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="truck_plate">Placa</Label>
+                <Label htmlFor="truck_plate">Placa {form.gca_emitida ? "" : "(opcional)"}</Label>
                 <Input
                   id="truck_plate"
                   type="text"
@@ -380,7 +433,7 @@ export function QueueForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="driver_name">Motorista (opcional)</Label>
+                <Label htmlFor="driver_name">Motorista {form.gca_emitida ? "" : "(opcional)"}</Label>
                 <Input
                   id="driver_name"
                   type="text"
@@ -389,6 +442,7 @@ export function QueueForm({
                   placeholder="Nome do motorista"
                   className="h-11 rounded-xl"
                 />
+                {errors.driver_name && <p className="text-xs text-red-500">{errors.driver_name}</p>}
               </div>
 
               <div className="space-y-2">

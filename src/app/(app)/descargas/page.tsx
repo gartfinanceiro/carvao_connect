@@ -433,7 +433,7 @@ function DescargasContent() {
                     Umidade
                   </SortableHeader>
                   <SortableHeader column="fines_percent" className="hidden xl:table-cell">
-                    Moinha
+                    Impurezas
                   </SortableHeader>
                   {canSeeFinancials && (
                     <SortableHeader column="gross_total" className="hidden xl:table-cell">
@@ -654,7 +654,7 @@ function DischargeRow({
                 </p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground">Moinha</p>
+                <p className="text-xs text-muted-foreground">Impurezas</p>
                 <p className={`font-medium ${finesPercent > 3 ? "text-amber-600" : ""}`}>
                   {Number(d.fines_kg) > 0
                     ? `${Number(d.fines_kg).toLocaleString("pt-BR")} kg (${finesPercent}%)`

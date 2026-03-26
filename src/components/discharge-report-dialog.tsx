@@ -281,7 +281,7 @@ export function DischargeReportDialog({ open, onOpenChange }: DischargeReportDia
             <div className="space-y-1.5">
               <CheckboxItem label="Valor bruto / Valor líquido" checked disabled />
               <CheckboxItem label="Umidade (%)" checked={colMoisture} onChange={setColMoisture} />
-              <CheckboxItem label="Moinha (%)" checked={colFines} onChange={setColFines} />
+              <CheckboxItem label="Impurezas (%)" checked={colFines} onChange={setColFines} />
               <CheckboxItem label="Descontos (R$)" checked={colDeductions} onChange={setColDeductions} />
               <CheckboxItem label="Placa do caminhão" checked={colPlate} onChange={setColPlate} />
               <CheckboxItem label="Nota fiscal" checked={colInvoice} onChange={setColInvoice} />

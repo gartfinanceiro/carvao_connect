@@ -46,6 +46,9 @@ interface FormData {
   last_price: string
   dcf_number: string
   dcf_issue_date: string
+  bank_name: string
+  bank_agency: string
+  bank_account: string
   notes: string
 }
 
@@ -64,6 +67,9 @@ function getInitialFormData(supplier?: Supplier | null): FormData {
     last_price: supplier?.last_price?.toString() ?? "",
     dcf_number: supplier?.dcf_number ?? "",
     dcf_issue_date: supplier?.dcf_issue_date ?? "",
+    bank_name: supplier?.bank_name ?? "",
+    bank_agency: supplier?.bank_agency ?? "",
+    bank_account: supplier?.bank_account ?? "",
     notes: supplier?.notes ?? "",
   }
 }
@@ -180,6 +186,9 @@ export function SupplierForm({
       last_price: form.last_price ? Number(form.last_price) : null,
       dcf_number: form.dcf_number.trim(),
       dcf_issue_date: form.dcf_issue_date || null,
+      bank_name: form.bank_name.trim() || null,
+      bank_agency: form.bank_agency.trim() || null,
+      bank_account: form.bank_account.trim() || null,
       notes: form.notes.trim() || null,
     }
 
@@ -246,7 +255,7 @@ export function SupplierForm({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {isEdit ? "Editar fornecedor" : "Novo fornecedor"}
@@ -501,6 +510,40 @@ export function SupplierForm({
                     <span className="text-xs text-red-500 font-medium">Irregular</span>
                   )}
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Bank Details */}
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Dados Bancários</Label>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="bank_name" className="text-xs text-muted-foreground">Banco</Label>
+                <Input
+                  id="bank_name"
+                  value={form.bank_name}
+                  onChange={(e) => updateField("bank_name", e.target.value)}
+                  placeholder="ex: Bradesco"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="bank_agency" className="text-xs text-muted-foreground">Agência</Label>
+                <Input
+                  id="bank_agency"
+                  value={form.bank_agency}
+                  onChange={(e) => updateField("bank_agency", e.target.value)}
+                  placeholder="ex: 1234"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="bank_account" className="text-xs text-muted-foreground">Conta</Label>
+                <Input
+                  id="bank_account"
+                  value={form.bank_account}
+                  onChange={(e) => updateField("bank_account", e.target.value)}
+                  placeholder="ex: 12345-6"
+                />
               </div>
             </div>
           </div>

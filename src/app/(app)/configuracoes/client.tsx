@@ -9,9 +9,11 @@ import { Label } from "@/components/ui/label"
 import {
   Loader2, LogOut, MessageSquare, RefreshCw, CreditCard, ExternalLink, Lock,
   Users, UserPlus, Copy, Check, MoreHorizontal, Shield, ShieldOff, UserMinus, Settings,
+  Bell, Calculator, User, Building2, ChevronRight,
 } from "lucide-react"
 import { toast } from "sonner"
 import { WhatsAppSetup } from "@/components/whatsapp-setup"
+import { DiscountPolicySettings } from "@/components/discount-policy-settings"
 import { useSubscription } from "@/components/subscription-provider"
 import {
   PROFILE_TEMPLATES,
@@ -94,6 +96,65 @@ export function ConfiguracoesClient({
 
   // Invite profile state
   const [inviteTemplate, setInviteTemplate] = useState<ProfileTemplate>("completo")
+
+  // Organization details state
+  const [orgDoc, setOrgDoc] = useState("")
+  const [orgAddress, setOrgAddress] = useState("")
+  const [orgCity, setOrgCity] = useState("")
+  const [orgState, setOrgState] = useState("")
+  const [orgPhone, setOrgPhone] = useState("")
+  const [orgStateReg, setOrgStateReg] = useState("")
+  const [savingOrg, setSavingOrg] = useState(false)
+  const [orgLoaded, setOrgLoaded] = useState(false)
+
+  const fetchOrgDetails = useCallback(async () => {
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).single()
+    if (!profile?.organization_id) return
+    const { data: org } = await supabase
+      .from("organizations")
+      .select("document, address, city, state, phone, state_registration")
+      .eq("id", profile.organization_id)
+      .single()
+    if (org) {
+      setOrgDoc(org.document || "")
+      setOrgAddress(org.address || "")
+      setOrgCity(org.city || "")
+      setOrgState(org.state || "")
+      setOrgPhone(org.phone || "")
+      setOrgStateReg(org.state_registration || "")
+    }
+    setOrgLoaded(true)
+  }, [])
+
+  useEffect(() => { fetchOrgDetails() }, [fetchOrgDetails])
+
+  async function handleSaveOrgDetails() {
+    setSavingOrg(true)
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) { toast.error("Sessão expirada."); setSavingOrg(false); return }
+    const { data: profile } = await supabase.from("profiles").select("organization_id").eq("id", user.id).single()
+    if (!profile?.organization_id) { toast.error("Organização não encontrada."); setSavingOrg(false); return }
+
+    const { error } = await supabase.from("organizations").update({
+      document: orgDoc.trim() || null,
+      address: orgAddress.trim() || null,
+      city: orgCity.trim() || null,
+      state: orgState.trim() || null,
+      phone: orgPhone.trim() || null,
+      state_registration: orgStateReg.trim() || null,
+    }).eq("id", profile.organization_id)
+
+    if (error) {
+      toast.error("Erro ao salvar dados da organização.")
+    } else {
+      toast.success("Dados da organização atualizados!")
+    }
+    setSavingOrg(false)
+  }
 
   async function handleSaveName() {
     if (!name.trim()) return
@@ -325,13 +386,21 @@ export function ConfiguracoesClient({
   const whatsappEnabled = subscription?.plan_limits?.whatsapp_enabled ?? false
 
   return (
-    <div className="p-4 md:p-6 max-w-2xl">
+    <div className="p-4 md:p-6 max-w-2xl space-y-5">
       <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
 
-      {/* Account */}
-      <section className="mt-8">
-        <h2 className="text-sm font-medium text-foreground">Minha conta</h2>
-        <div className="mt-4 space-y-4">
+      {/* Account Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+          <div className="h-8 w-8 rounded-lg bg-[#1B4332]/10 flex items-center justify-center flex-shrink-0">
+            <User className="h-4 w-4 text-[#1B4332]" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Minha conta</h2>
+            <p className="text-xs text-muted-foreground">Dados pessoais e acesso</p>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name" className="text-xs text-muted-foreground">Nome</Label>
             <div className="flex gap-2">
@@ -357,17 +426,20 @@ export function ConfiguracoesClient({
             <Input value={userEmail} disabled />
           </div>
         </div>
-      </section>
+      </div>
 
-      <div className="border-t border-black/[0.04] my-8" />
-
-      {/* Organization & Billing */}
-      <section>
-        <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
-          <CreditCard className="h-4 w-4" />
-          Organização e Plano
-        </h2>
-        <div className="mt-4 space-y-4">
+      {/* Organization & Billing Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+          <div className="h-8 w-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+            <Building2 className="h-4 w-4 text-blue-600" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Organização e Plano</h2>
+            <p className="text-xs text-muted-foreground">Informações da empresa e assinatura</p>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-4">
           <div>
             <p className="text-sm font-medium">{orgName || "Organização"}</p>
             <p className="text-xs text-muted-foreground">Nome da organização</p>
@@ -447,22 +519,84 @@ export function ConfiguracoesClient({
             </div>
           )}
         </div>
-      </section>
+      </div>
 
-      <div className="border-t border-black/[0.04] my-8" />
+      {/* Organization Details Card (admin only) */}
+      {isAdmin && orgLoaded && (
+        <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+            <div className="h-8 w-8 rounded-lg bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-4 w-4 text-slate-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Dados da Empresa</h2>
+              <p className="text-xs text-muted-foreground">CNPJ, endereço e dados para o ticket de descarga</p>
+            </div>
+          </div>
+          <div className="px-5 py-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">CNPJ</Label>
+                <Input value={orgDoc} onChange={(e) => setOrgDoc(e.target.value)} placeholder="00.000.000/0000-00" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Inscrição Estadual</Label>
+                <Input value={orgStateReg} onChange={(e) => setOrgStateReg(e.target.value)} placeholder="ex: 123.456.789.0012" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Endereço</Label>
+              <Input value={orgAddress} onChange={(e) => setOrgAddress(e.target.value)} placeholder="Rua, número, bairro" />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Cidade</Label>
+                <Input value={orgCity} onChange={(e) => setOrgCity(e.target.value)} placeholder="ex: Sete Lagoas" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Estado</Label>
+                <Input value={orgState} onChange={(e) => setOrgState(e.target.value)} placeholder="ex: MG" maxLength={2} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Telefone</Label>
+                <Input value={orgPhone} onChange={(e) => setOrgPhone(e.target.value)} placeholder="(31) 3333-3333" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-xs"
+                onClick={handleSaveOrgDetails}
+                disabled={savingOrg}
+              >
+                {savingOrg && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Salvar dados da empresa
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      {/* Team */}
-      <section>
-        <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Users className="h-4 w-4" />
-          Equipe
-          {limits && (
-            <span className="text-xs font-normal text-muted-foreground">
-              · {members.length}/{limits.max_users} usuários
-            </span>
-          )}
-        </h2>
-        <div className="mt-4 space-y-4">
+      {/* Team Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+          <div className="h-8 w-8 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+            <Users className="h-4 w-4 text-purple-600" />
+          </div>
+          <div className="flex items-center gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Equipe</h2>
+              <p className="text-xs text-muted-foreground">Membros e permissões de acesso</p>
+            </div>
+            {limits && (
+              <span className="text-[11px] font-medium text-muted-foreground bg-muted rounded-full px-2 py-0.5 ml-1">
+                {members.length}/{limits.max_users}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-4">
           {/* Roles explanation */}
           <div className="bg-[#F9F9F9] rounded-xl p-4 space-y-3">
             <div className="flex items-start gap-3">
@@ -687,17 +821,20 @@ export function ConfiguracoesClient({
             </>
           )}
         </div>
-      </section>
+      </div>
 
-      <div className="border-t border-black/[0.04] my-8" />
-
-      {/* WhatsApp */}
-      <section>
-        <h2 className="text-sm font-medium text-foreground flex items-center gap-2">
-          <MessageSquare className="h-4 w-4" />
-          WhatsApp
-        </h2>
-        <div className="mt-4">
+      {/* WhatsApp Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+          <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <MessageSquare className="h-4 w-4 text-emerald-600" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">WhatsApp</h2>
+            <p className="text-xs text-muted-foreground">Integração com WhatsApp + IA</p>
+          </div>
+        </div>
+        <div className="px-5 py-4">
           {whatsappEnabled && isAdmin ? (
             <WhatsAppSetup />
           ) : whatsappEnabled && !isAdmin ? (
@@ -730,14 +867,38 @@ export function ConfiguracoesClient({
             </div>
           )}
         </div>
-      </section>
+      </div>
 
-      <div className="border-t border-black/[0.04] my-8" />
+      {/* Discount Policy Card */}
+      {isAdmin && (
+        <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+            <div className="h-8 w-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+              <Calculator className="h-4 w-4 text-amber-600" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-foreground">Tabela de Preços e Descontos</h2>
+              <p className="text-xs text-muted-foreground">Faixas de preço por densidade, descontos e regras comerciais</p>
+            </div>
+          </div>
+          <div className="px-5 py-4">
+            <DiscountPolicySettings />
+          </div>
+        </div>
+      )}
 
-      {/* Alerts */}
-      <section>
-        <h2 className="text-sm font-medium text-foreground">Alertas</h2>
-        <div className="mt-4 space-y-3">
+      {/* Alerts Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border/60">
+          <div className="h-8 w-8 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+            <Bell className="h-4 w-4 text-orange-600" />
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Alertas</h2>
+            <p className="text-xs text-muted-foreground">Lembretes de vencimentos e inatividade</p>
+          </div>
+        </div>
+        <div className="px-5 py-4 space-y-3">
           <p className="text-sm text-muted-foreground">
             Alertas de vencimento de documentos e fornecedores inativos são verificados diariamente.
           </p>
@@ -755,17 +916,17 @@ export function ConfiguracoesClient({
             Atualizar alertas
           </Button>
         </div>
-      </section>
+      </div>
 
-      <div className="border-t border-black/[0.04] my-8" />
-
-      {/* Logout */}
-      <section>
-        <Button variant="ghost" onClick={handleLogout} className="text-muted-foreground hover:text-foreground">
-          <LogOut className="mr-2 h-4 w-4" />
-          Sair
-        </Button>
-      </section>
+      {/* Logout Card */}
+      <div className="rounded-xl border border-border bg-white shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="px-5 py-4">
+          <Button variant="ghost" onClick={handleLogout} className="text-muted-foreground hover:text-foreground">
+            <LogOut className="mr-2 h-4 w-4" />
+            Sair da conta
+          </Button>
+        </div>
+      </div>
 
       {/* Permissions Modal */}
       {permModalOpen && permMember && (

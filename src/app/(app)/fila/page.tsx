@@ -4,9 +4,18 @@ import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Loader2, Pencil, X } from "lucide-react"
+import { Loader2, Pencil, X, FileCheck, FileX } from "lucide-react"
 import { toast } from "sonner"
 import { QueueForm } from "@/components/queue-form"
 import { DischargeForm } from "@/components/discharge-form"
@@ -42,6 +51,12 @@ function FilaContent() {
   const [cancellingId, setCancellingId] = useState<string | null>(null)
   const [editEntry, setEditEntry] = useState<QueueEntryWithSupplier | null>(null)
   const [unit, setUnit] = useState<VolumeUnit>("mdc")
+  // GCA dialog
+  const [gcaDialogOpen, setGcaDialogOpen] = useState(false)
+  const [gcaEntry, setGcaEntry] = useState<QueueEntryWithSupplier | null>(null)
+  const [gcaPlate, setGcaPlate] = useState("")
+  const [gcaDriver, setGcaDriver] = useState("")
+  const [gcaSaving, setGcaSaving] = useState(false)
 
   const fetchEntries = useCallback(async () => {
     setLoading(true)
@@ -126,6 +141,70 @@ function FilaContent() {
       toast.error("Erro ao cancelar entrada")
     } finally {
       setCancellingId(null)
+    }
+  }
+
+  function openGcaDialog(entry: QueueEntryWithSupplier) {
+    setGcaEntry(entry)
+    setGcaPlate(entry.truck_plate || "")
+    setGcaDriver(entry.driver_name || "")
+    setGcaDialogOpen(true)
+  }
+
+  async function handleSaveGca() {
+    if (!gcaEntry) return
+    if (!gcaPlate.trim()) {
+      toast.error("Placa é obrigatória")
+      return
+    }
+    setGcaSaving(true)
+    const supabase = createClient()
+    try {
+      const { error } = await supabase
+        .from("queue_entries")
+        .update({
+          gca_emitida: true,
+          truck_plate: gcaPlate.trim().toUpperCase() || null,
+          driver_name: gcaDriver.trim() || null,
+        })
+        .eq("id", gcaEntry.id)
+      if (error) throw error
+      toast.success("GCA registrada!")
+      setGcaDialogOpen(false)
+      setGcaEntry(null)
+      fetchEntries()
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao salvar GCA")
+    } finally {
+      setGcaSaving(false)
+    }
+  }
+
+  async function handleRemoveGca() {
+    if (!gcaEntry) return
+    if (!window.confirm("Remover GCA e limpar placa/motorista?")) return
+    setGcaSaving(true)
+    const supabase = createClient()
+    try {
+      const { error } = await supabase
+        .from("queue_entries")
+        .update({
+          gca_emitida: false,
+          truck_plate: null,
+          driver_name: null,
+        })
+        .eq("id", gcaEntry.id)
+      if (error) throw error
+      toast.success("GCA removida")
+      setGcaDialogOpen(false)
+      setGcaEntry(null)
+      fetchEntries()
+    } catch (err) {
+      console.error(err)
+      toast.error("Erro ao remover GCA")
+    } finally {
+      setGcaSaving(false)
     }
   }
 
@@ -347,18 +426,45 @@ function FilaContent() {
 
                     {/* Supplier and truck info */}
                     <div className="flex-1 min-w-0">
-                      <Link
-                        href={`/fornecedores/${entry.supplier_id}`}
-                        className="font-semibold text-[#1B4332] hover:underline block truncate"
-                      >
-                        {entry.suppliers?.name || "—"}
-                      </Link>
+                      <div className="flex items-center gap-2">
+                        <Link
+                          href={`/fornecedores/${entry.supplier_id}`}
+                          className="font-semibold text-[#1B4332] hover:underline truncate"
+                        >
+                          {entry.suppliers?.name || "—"}
+                        </Link>
+                        {entry.gca_emitida ? (
+                          <button
+                            type="button"
+                            onClick={() => openGcaDialog(entry)}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-full px-2 py-0.5 hover:bg-emerald-200 transition-colors cursor-pointer"
+                          >
+                            <FileCheck className="h-3 w-3" />
+                            GCA ✓
+                          </button>
+                        ) : entry.status !== "concluido" && entry.status !== "cancelado" ? (
+                          <button
+                            type="button"
+                            onClick={() => openGcaDialog(entry)}
+                            className="inline-flex items-center gap-1 text-[10px] font-semibold bg-amber-100 text-amber-700 border border-amber-200 rounded-full px-2 py-0.5 hover:bg-amber-200 transition-colors cursor-pointer"
+                          >
+                            <FileX className="h-3 w-3" />
+                            Informar GCA
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold bg-gray-100 text-gray-500 rounded-full px-2 py-0.5">
+                            <FileX className="h-3 w-3" />
+                            Sem GCA
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-[#737373]">
                         {entry.truck_plate && `Placa: ${entry.truck_plate}`}
                         {entry.truck_plate && entry.driver_name && " | "}
                         {entry.driver_name && `Motorista: ${entry.driver_name}`}
                         {(entry.truck_plate || entry.driver_name) && entry.creator?.name && " · "}
                         {entry.creator?.name && `por ${entry.creator.name}`}
+                        {!entry.truck_plate && !entry.driver_name && entry.creator?.name && `por ${entry.creator.name}`}
                       </p>
                     </div>
 
@@ -449,6 +555,66 @@ function FilaContent() {
           onSuccess={handleDischargeSuccess}
         />
       )}
+
+      {/* GCA Dialog */}
+      <Dialog open={gcaDialogOpen} onOpenChange={setGcaDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileCheck className="h-5 w-5" />
+              {gcaEntry?.gca_emitida ? "Editar dados da GCA" : "Informar GCA"}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {gcaEntry?.gca_emitida
+                ? "Edite os dados de transporte vinculados à GCA."
+                : "A GCA (Guia de Controle Ambiental) foi emitida pelo fornecedor. Preencha os dados do transporte:"}
+            </p>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Placa do caminhão *</Label>
+              <Input
+                value={gcaPlate}
+                onChange={(e) => setGcaPlate(e.target.value.toUpperCase())}
+                placeholder="ABC-1234"
+                className="h-8 text-sm uppercase"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Nome do motorista</Label>
+              <Input
+                value={gcaDriver}
+                onChange={(e) => setGcaDriver(e.target.value)}
+                placeholder="Nome do motorista"
+                className="h-8 text-sm"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {gcaEntry?.gca_emitida && (
+              <Button
+                variant="ghost"
+                className="text-red-600 hover:text-red-700 hover:bg-red-50 mr-auto"
+                onClick={handleRemoveGca}
+                disabled={gcaSaving}
+              >
+                Remover GCA
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setGcaDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              className="bg-[#1B4332] hover:bg-[#2D6A4F]"
+              onClick={handleSaveGca}
+              disabled={gcaSaving || !gcaPlate.trim()}
+            >
+              {gcaSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {gcaEntry?.gca_emitida ? "Salvar alterações" : "Confirmar GCA"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

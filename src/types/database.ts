@@ -35,6 +35,12 @@ export interface PlanLimits {
 export interface Organization {
   id: string
   name: string
+  document: string | null
+  address: string | null
+  city: string | null
+  state: string | null
+  phone: string | null
+  state_registration: string | null
   plan: PlanType
   plan_limits: PlanLimits
   trial_ends_at: string | null
@@ -92,6 +98,9 @@ export interface Supplier {
   dcf_expiry: string | null
   dcf_number: string | null
   last_price: number | null
+  bank_name: string | null
+  bank_agency: string | null
+  bank_account: string | null
   notes: string | null
   status: SupplierStatus
   last_contact_at: string | null
@@ -99,6 +108,8 @@ export interface Supplier {
   created_at: string
   updated_at: string
 }
+
+export type PromisedStatus = 'pendente' | 'agendada' | 'entregue' | 'cancelada' | 'adiada'
 
 export interface Interaction {
   id: string
@@ -113,6 +124,10 @@ export interface Interaction {
   load_promised: boolean
   promised_volume: number | null
   promised_date: string | null
+  promised_status: PromisedStatus
+  promised_cancel_reason: string | null
+  resolved_discharge_id: string | null
+  resolved_queue_id: string | null
   created_at: string
   updated_at: string
 }
@@ -270,11 +285,63 @@ export interface Discharge {
   invoice_number: string | null
   forest_guide: string | null
   charcoal_type: CharcoalType | null
+  gca_emitida: boolean
+  funrural_percent: number
+  funrural_value: number
+  discharge_number: number | null
+  pricing_unit: PricingUnit
   notes: string | null
   created_by: string | null
   created_at: string
   updated_at: string
   supplier?: { name: string }
+}
+
+
+// Discount Policy types
+export type MoistureDiscountType = 'none' | 'excess' | 'total'
+export type ImpurityDiscountOn = 'gross' | 'net'
+
+export interface MoistureRule {
+  from: number
+  to: number
+  type: MoistureDiscountType
+}
+
+export type PricingUnit = 'mdc' | 'ton'
+
+export interface DensityPricingRule {
+  person_type?: 'pf' | 'pj'
+  min_density: number
+  max_density: number
+  price_per_mdc: number
+  pricing_unit?: PricingUnit
+}
+
+export interface PricingAdditionalRules {
+  metering_tolerance_percent?: number
+  payment_method?: string
+  payment_deadline?: string
+  species_required?: string
+  third_party_payment_rule?: string
+  notes?: string
+}
+
+export interface DiscountPolicy {
+  id: string
+  organization_id: string
+  name: string
+  is_active: boolean
+  moisture_rules: MoistureRule[]
+  impurity_tolerance_percent: number
+  impurity_discount_on: ImpurityDiscountOn
+  density_pricing_rules: DensityPricingRule[]
+  effective_date?: string
+  source_document_url?: string
+  additional_rules?: PricingAdditionalRules
+  created_by: string | null
+  created_at: string
+  updated_at: string
 }
 
 export type QueueEntryType = 'fila' | 'agendamento'
@@ -295,6 +362,7 @@ export interface QueueEntry {
   arrival_time: string | null
   queue_position: number | null
   status: QueueStatus
+  gca_emitida: boolean
   notes: string | null
   created_by: string | null
   created_at: string

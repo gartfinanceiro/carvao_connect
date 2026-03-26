@@ -178,7 +178,7 @@ export function LandingPage() {
               { icon: "👥", title: "Cadastro de fornecedores", desc: "Base completa com capacidade, tipo de carvão, densidade, documentação e múltiplos telefones. Busca e filtros instantâneos." },
               { icon: "📞", title: "Timeline de interações", desc: "Registre cada ligação, WhatsApp ou visita. Notas, cargas prometidas e próximos passos — tudo em um fluxo guiado." },
               { icon: "🔔", title: "Alertas inteligentes", desc: "Follow-ups, retornos automáticos, vencimento de DCF e confirmação de cargas. O sistema lembra por você." },
-              { icon: "📦", title: "Registro de descargas", desc: "Volume, pesagem, densidade, umidade, moinha e valor — tudo calculado automaticamente. Histórico completo." },
+              { icon: "📦", title: "Registro de descargas", desc: "Volume, pesagem, densidade, umidade, impurezas e valor — tudo calculado automaticamente. Histórico completo." },
               { icon: "📄", title: "Gestão de documentos", desc: "Checklist dos 11 documentos essenciais por fornecedor. Anexe PDFs, controle vencimentos e nunca perca uma DCF." },
               { icon: "💬", title: "Integração WhatsApp + IA", desc: "A IA lê suas conversas de WhatsApp e extrai dados automaticamente: cargas prometidas, preços e datas de entrega." },
             ].map((f, i) => (
