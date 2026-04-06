@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { ZApiClient } from "@/lib/zapi"
+import { MetaWhatsAppClient } from "@/lib/meta-whatsapp"
 
+/**
+ * GET /api/whatsapp/status
+ *
+ * Retorna o status de todas as conexões WhatsApp da organização.
+ * Adaptado de Z-API para Meta Cloud API.
+ */
 export async function GET() {
   const supabase = await createClient()
   const {
@@ -11,58 +17,90 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data: connection } = await supabase
+  const { data: connections } = await supabase
     .from("whatsapp_connections")
-    .select("instance_id, instance_token, client_token, status, connected_phone, connected_at")
-    .single()
+    .select(
+      "id, meta_phone_number_id, meta_access_token, meta_waba_id, meta_token_expires_at, status, display_phone_number, verified_name, quality_rating, messaging_limit, label, connected_at, disconnected_at, webhook_verified"
+    )
+    .order("created_at", { ascending: true })
 
-  if (!connection) {
+  if (!connections || connections.length === 0) {
     return NextResponse.json({
       configured: false,
-      status: "disconnected",
-      connectedPhone: null,
-      connectedAt: null,
+      connections: [],
     })
   }
 
-  const zapi = new ZApiClient(connection.instance_id, connection.instance_token, connection.client_token)
+  // Para cada conexão, verificar o status real via Graph API
+  const enrichedConnections = await Promise.all(
+    connections.map(async (conn) => {
+      // Verificar se o token está expirado
+      const tokenExpired = conn.meta_token_expires_at
+        ? new Date(conn.meta_token_expires_at) < new Date()
+        : false
 
-  try {
-    const zapiStatus = await zapi.getStatus()
+      if (tokenExpired && conn.status === "connected") {
+        // Marcar como desconectado se o token expirou
+        await supabase
+          .from("whatsapp_connections")
+          .update({ status: "disconnected", disconnected_at: new Date().toISOString() })
+          .eq("id", conn.id)
 
-    // Sync DB status with Z-API reality
-    if (zapiStatus.connected && connection.status !== "connected") {
-      await supabase
-        .from("whatsapp_connections")
-        .update({
-          status: "connected",
-          connected_at: new Date().toISOString(),
-        })
-        .eq("instance_id", connection.instance_id)
-    } else if (!zapiStatus.connected && connection.status === "connected") {
-      await supabase
-        .from("whatsapp_connections")
-        .update({
-          status: "disconnected",
-          disconnected_at: new Date().toISOString(),
-        })
-        .eq("instance_id", connection.instance_id)
-    }
+        return { ...conn, status: "disconnected", tokenExpired: true }
+      }
 
-    return NextResponse.json({
-      configured: true,
-      status: zapiStatus.connected ? "connected" : "disconnected",
-      connectedPhone: connection.connected_phone,
-      connectedAt: connection.connected_at,
+      // Verificar status real via Meta API (somente se conectado)
+      if (conn.status === "connected" && conn.meta_access_token && conn.meta_phone_number_id) {
+        try {
+          const client = new MetaWhatsAppClient(conn.meta_access_token, conn.meta_phone_number_id)
+          const phoneInfo = await client.getPhoneNumberInfo()
+
+          // Atualizar quality_rating e messaging_limit se mudaram
+          if (
+            phoneInfo.quality_rating !== conn.quality_rating ||
+            phoneInfo.messaging_limit !== conn.messaging_limit
+          ) {
+            await supabase
+              .from("whatsapp_connections")
+              .update({
+                quality_rating: phoneInfo.quality_rating,
+                messaging_limit: phoneInfo.messaging_limit ?? null,
+                verified_name: phoneInfo.verified_name,
+              })
+              .eq("id", conn.id)
+          }
+
+          return {
+            ...conn,
+            quality_rating: phoneInfo.quality_rating,
+            messaging_limit: phoneInfo.messaging_limit ?? conn.messaging_limit,
+            verified_name: phoneInfo.verified_name,
+          }
+        } catch (err) {
+          console.error(`[Status] Error checking phone ${conn.meta_phone_number_id}:`, err)
+          return { ...conn, apiError: true }
+        }
+      }
+
+      return conn
     })
-  } catch (err) {
-    console.error("Z-API status error:", err)
-    return NextResponse.json({
-      configured: true,
-      status: connection.status,
-      connectedPhone: connection.connected_phone,
-      connectedAt: connection.connected_at,
-      zapiError: true,
-    })
-  }
+  )
+
+  return NextResponse.json({
+    configured: true,
+    connections: enrichedConnections.map((c) => ({
+      id: c.id,
+      status: c.status,
+      phone: c.display_phone_number,
+      verifiedName: c.verified_name,
+      qualityRating: c.quality_rating,
+      messagingLimit: c.messaging_limit,
+      label: c.label,
+      connectedAt: c.connected_at,
+      disconnectedAt: c.disconnected_at,
+      webhookVerified: c.webhook_verified,
+      tokenExpired: "tokenExpired" in c ? c.tokenExpired : false,
+      apiError: "apiError" in c ? c.apiError : false,
+    })),
+  })
 }

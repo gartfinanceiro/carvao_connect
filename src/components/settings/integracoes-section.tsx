@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { MessageSquare, Lock } from "lucide-react"
+import { MessageSquare, Lock, ExternalLink } from "lucide-react"
 import { WhatsAppSetup } from "@/components/whatsapp-setup"
 import { useSubscription } from "@/components/subscription-provider"
 
@@ -23,11 +23,25 @@ export function IntegracoesSection() {
           <div className="h-8 w-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
             <MessageSquare className="h-4 w-4 text-emerald-600" />
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">WhatsApp</h3>
-            <p className="text-xs text-muted-foreground">Integração com WhatsApp + IA</p>
+          <div className="flex-1">
+            <h3 className="text-sm font-semibold text-foreground">WhatsApp Business</h3>
+            <p className="text-xs text-muted-foreground">
+              Integração oficial com Meta Cloud API + IA
+            </p>
           </div>
+          {whatsappEnabled && isAdmin && (
+            <a
+              href="https://business.facebook.com/settings/whatsapp-business-accounts"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            >
+              Meta Business
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
+
         {whatsappEnabled && isAdmin ? (
           <WhatsAppSetup />
         ) : whatsappEnabled && !isAdmin ? (
@@ -46,7 +60,7 @@ export function IntegracoesSection() {
             <div>
               <p className="text-sm font-medium text-[#333]">Disponível no Professional</p>
               <p className="text-xs text-muted-foreground">
-                Faça upgrade para integrar WhatsApp com IA.
+                Faça upgrade para integrar WhatsApp Business com IA.
               </p>
             </div>
             <Button

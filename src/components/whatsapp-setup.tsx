@@ -2,48 +2,110 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { Button } from "@/components/ui/button"
-import { Loader2, Wifi, WifiOff, Smartphone } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Loader2,
+  Wifi,
+  WifiOff,
+  Smartphone,
+  Plus,
+  Trash2,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle2,
+  Shield,
+} from "lucide-react"
 import { toast } from "sonner"
 
-type ConnectionState = "loading" | "not_configured" | "disconnected" | "connecting" | "connected"
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-interface StatusData {
-  configured: boolean
+interface ConnectionInfo {
+  id: string
   status: string
-  connectedPhone: string | null
+  phone: string | null
+  verifiedName: string | null
+  qualityRating: string
+  messagingLimit: string | null
+  label: string
   connectedAt: string | null
+  disconnectedAt: string | null
+  webhookVerified: boolean
+  tokenExpired: boolean
+  apiError: boolean
 }
 
+interface StatusResponse {
+  configured: boolean
+  connections: ConnectionInfo[]
+}
+
+type ViewState = "loading" | "not_configured" | "ready"
+
+declare global {
+  interface Window {
+    fbAsyncInit?: () => void
+    FB?: {
+      init: (params: Record<string, unknown>) => void
+      login: (
+        callback: (response: { authResponse?: { code?: string } }) => void,
+        params: Record<string, unknown>
+      ) => void
+    }
+  }
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
 export function WhatsAppSetup() {
-  const [state, setState] = useState<ConnectionState>("loading")
-  const [qrCode, setQrCode] = useState<string | null>(null)
-  const [connectedPhone, setConnectedPhone] = useState<string | null>(null)
-  const [connectedAt, setConnectedAt] = useState<string | null>(null)
-  const [polling, setPolling] = useState(false)
-  const [disconnecting, setDisconnecting] = useState(false)
+  const [viewState, setViewState] = useState<ViewState>("loading")
+  const [connections, setConnections] = useState<ConnectionInfo[]>([])
+  const [connecting, setConnecting] = useState(false)
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null)
+  const [fbSdkReady, setFbSdkReady] = useState(false)
+
+  // Carregar Facebook SDK
+  useEffect(() => {
+    if (window.FB) {
+      setFbSdkReady(true)
+      return
+    }
+
+    window.fbAsyncInit = function () {
+      window.FB?.init({
+        appId: process.env.NEXT_PUBLIC_META_APP_ID,
+        cookie: true,
+        xfbml: true,
+        version: "v21.0",
+      })
+      setFbSdkReady(true)
+    }
+
+    // Carregar SDK
+    if (!document.getElementById("facebook-jssdk")) {
+      const script = document.createElement("script")
+      script.id = "facebook-jssdk"
+      script.src = "https://connect.facebook.net/pt_BR/sdk.js"
+      script.async = true
+      script.defer = true
+      document.head.appendChild(script)
+    }
+  }, [])
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/whatsapp/status")
       if (!res.ok) return
-      const data: StatusData = await res.json()
+      const data: StatusResponse = await res.json()
 
       if (!data.configured) {
-        setState("not_configured")
-        return
-      }
-
-      if (data.status === "connected") {
-        setState("connected")
-        setConnectedPhone(data.connectedPhone)
-        setConnectedAt(data.connectedAt)
-        setQrCode(null)
-        setPolling(false)
+        setViewState("not_configured")
+        setConnections([])
       } else {
-        setState("disconnected")
+        setViewState("ready")
+        setConnections(data.connections)
       }
     } catch {
-      setState("disconnected")
+      setViewState("not_configured")
     }
   }, [])
 
@@ -51,71 +113,94 @@ export function WhatsAppSetup() {
     fetchStatus()
   }, [fetchStatus])
 
-  // Poll for connection status when showing QR code
-  useEffect(() => {
-    if (!polling) return
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch("/api/whatsapp/status")
-        if (!res.ok) return
-        const data: StatusData = await res.json()
-        if (data.status === "connected") {
-          setState("connected")
-          setConnectedPhone(data.connectedPhone)
-          setConnectedAt(data.connectedAt)
-          setQrCode(null)
-          setPolling(false)
-          toast.success("WhatsApp conectado!")
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 3000)
-    return () => clearInterval(interval)
-  }, [polling])
+  // ─── Embedded Signup ─────────────────────────────────────────────────
 
   async function handleConnect() {
-    setState("connecting")
-    try {
-      const res = await fetch("/api/whatsapp/qrcode")
-      if (!res.ok) {
-        toast.error("Erro ao obter QR code.")
-        setState("disconnected")
-        return
-      }
-      const data = await res.json()
-      if (data.connected) {
-        setState("connected")
-        toast.success("WhatsApp já está conectado!")
-        return
-      }
-      setQrCode(data.qrCode)
-      setPolling(true)
-    } catch {
-      toast.error("Erro ao conectar com Z-API.")
-      setState("disconnected")
+    if (!window.FB) {
+      toast.error("Facebook SDK não carregado. Recarregue a página.")
+      return
     }
+
+    setConnecting(true)
+
+    window.FB.login(
+      async (response) => {
+        const code = response.authResponse?.code
+
+        if (!code) {
+          toast.error("Conexão cancelada ou falhou.")
+          setConnecting(false)
+          return
+        }
+
+        try {
+          const res = await fetch("/api/whatsapp/embedded-signup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          })
+
+          if (!res.ok) {
+            const data = await res.json()
+            toast.error(data.error || "Erro ao conectar WhatsApp.")
+            setConnecting(false)
+            return
+          }
+
+          const data = await res.json()
+          toast.success(
+            `WhatsApp conectado! ${data.connections?.length ?? 0} número(s) configurado(s).`
+          )
+
+          // Recarregar status
+          await fetchStatus()
+        } catch {
+          toast.error("Erro ao processar conexão.")
+        }
+
+        setConnecting(false)
+      },
+      {
+        config_id: process.env.NEXT_PUBLIC_META_CONFIG_ID,
+        response_type: "code",
+        override_default_response_type: true,
+        extras: {
+          setup: {
+            // Pré-preencher informações se possível
+          },
+          featureType: "",
+          sessionInfoVersion: "3",
+        },
+      }
+    )
   }
 
-  async function handleDisconnect() {
-    setDisconnecting(true)
+  // ─── Disconnect ──────────────────────────────────────────────────────
+
+  async function handleDisconnect(connectionId: string) {
+    setDisconnectingId(connectionId)
     try {
-      const res = await fetch("/api/whatsapp/disconnect", { method: "POST" })
+      const res = await fetch("/api/whatsapp/disconnect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId }),
+      })
+
       if (res.ok) {
-        setState("disconnected")
-        setConnectedPhone(null)
-        setConnectedAt(null)
         toast.success("WhatsApp desconectado.")
+        await fetchStatus()
       } else {
         toast.error("Erro ao desconectar.")
       }
     } catch {
       toast.error("Erro ao desconectar.")
     }
-    setDisconnecting(false)
+    setDisconnectingId(null)
   }
 
-  if (state === "loading") {
+  // ─── Render ──────────────────────────────────────────────────────────
+
+  if (viewState === "loading") {
     return (
       <div className="flex items-center gap-2 text-sm text-[#86868B]">
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -124,90 +209,191 @@ export function WhatsAppSetup() {
     )
   }
 
-  if (state === "not_configured") {
-    return (
-      <div className="space-y-3">
+  const activeConnections = connections.filter((c) => c.status === "connected")
+  const inactiveConnections = connections.filter((c) => c.status !== "connected")
+
+  return (
+    <div className="space-y-4">
+      {/* Conexões ativas */}
+      {activeConnections.map((conn) => (
+        <ConnectionCard
+          key={conn.id}
+          connection={conn}
+          onDisconnect={handleDisconnect}
+          disconnecting={disconnectingId === conn.id}
+        />
+      ))}
+
+      {/* Conexões inativas (colapsadas) */}
+      {inactiveConnections.length > 0 && (
+        <div className="space-y-2">
+          {inactiveConnections.map((conn) => (
+            <div
+              key={conn.id}
+              className="flex items-center gap-3 rounded-lg border border-dashed border-[#D2D2D7]/50 px-3 py-2"
+            >
+              <div className="h-2 w-2 rounded-full bg-[#86868B]" />
+              <span className="text-sm text-[#86868B]">
+                {conn.phone || conn.label} — Desconectado
+              </span>
+              {conn.tokenExpired && (
+                <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-200">
+                  Token expirado
+                </Badge>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Nenhuma conexão */}
+      {connections.length === 0 && (
         <div className="flex items-center gap-2">
           <WifiOff className="h-4 w-4 text-[#86868B]" />
-          <p className="text-sm text-[#86868B]">
-            WhatsApp não configurado. Entre em contato com o suporte para ativar.
-          </p>
+          <p className="text-sm text-[#86868B]">Nenhum número WhatsApp conectado.</p>
         </div>
-      </div>
-    )
-  }
+      )}
 
-  if (state === "connected") {
-    return (
-      <div className="space-y-3">
+      {/* Botão de conectar */}
+      <Button
+        variant="outline"
+        className="active:scale-[0.98]"
+        onClick={handleConnect}
+        disabled={connecting || !fbSdkReady}
+      >
+        {connecting ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Plus className="mr-2 h-4 w-4" />
+        )}
+        {connections.length === 0 ? "Conectar WhatsApp" : "Adicionar número"}
+      </Button>
+
+      {!fbSdkReady && (
+        <p className="text-xs text-[#86868B]">Carregando Facebook SDK...</p>
+      )}
+    </div>
+  )
+}
+
+// ─── ConnectionCard ──────────────────────────────────────────────────────────
+
+function ConnectionCard({
+  connection,
+  onDisconnect,
+  disconnecting,
+}: {
+  connection: ConnectionInfo
+  onDisconnect: (id: string) => void
+  disconnecting: boolean
+}) {
+  const qualityColor =
+    connection.qualityRating === "GREEN"
+      ? "text-emerald-600"
+      : connection.qualityRating === "YELLOW"
+        ? "text-amber-600"
+        : "text-red-600"
+
+  const qualityBg =
+    connection.qualityRating === "GREEN"
+      ? "bg-emerald-50"
+      : connection.qualityRating === "YELLOW"
+        ? "bg-amber-50"
+        : "bg-red-50"
+
+  return (
+    <div className="rounded-xl border border-[#D2D2D7]/50 bg-white p-4 space-y-3">
+      <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="h-2 w-2 rounded-full bg-[#34C759]" />
           <p className="text-sm font-medium text-[#1D1D1F]">Conectado</p>
+          {connection.label && (
+            <Badge variant="outline" className="text-[10px]">
+              {connection.label}
+            </Badge>
+          )}
         </div>
-        {connectedPhone && (
-          <div className="flex items-center gap-2 text-sm text-[#6E6E73]">
+        <div className="flex items-center gap-1">
+          {connection.webhookVerified ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+          ) : (
+            <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+          )}
+          <span className="text-[10px] text-[#86868B]">
+            {connection.webhookVerified ? "Webhook ativo" : "Webhook pendente"}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        {connection.phone && (
+          <div className="flex items-center gap-1.5 text-sm text-[#6E6E73]">
             <Smartphone className="h-3.5 w-3.5" />
-            {connectedPhone}
+            {connection.phone}
           </div>
         )}
-        {connectedAt && (
-          <p className="text-xs text-[#86868B]">
-            Desde {new Date(connectedAt).toLocaleDateString("pt-BR")},{" "}
-            {new Date(connectedAt).toLocaleTimeString("pt-BR", {
-              hour: "2-digit",
-              minute: "2-digit",
+        {connection.verifiedName && (
+          <div className="flex items-center gap-1.5 text-sm text-[#6E6E73]">
+            <Shield className="h-3.5 w-3.5" />
+            {connection.verifiedName}
+          </div>
+        )}
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Badge variant="outline" className={`text-[10px] ${qualityColor} ${qualityBg} border-0`}>
+          Qualidade: {connection.qualityRating}
+        </Badge>
+        {connection.messagingLimit && (
+          <span className="text-[10px] text-[#86868B]">
+            Limite: {connection.messagingLimit} msg/dia
+          </span>
+        )}
+        {connection.connectedAt && (
+          <span className="text-[10px] text-[#86868B]">
+            Desde{" "}
+            {new Date(connection.connectedAt).toLocaleDateString("pt-BR", {
+              day: "2-digit",
+              month: "short",
             })}
-          </p>
+          </span>
         )}
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-xs active:scale-[0.98]"
-          onClick={handleDisconnect}
-          disabled={disconnecting}
-        >
-          {disconnecting && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
-          Desconectar
-        </Button>
-      </div>
-    )
-  }
-
-  // Disconnected or Connecting (QR code)
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <div className="h-2 w-2 rounded-full bg-[#FF3B30]" />
-        <p className="text-sm font-medium text-[#1D1D1F]">Desconectado</p>
       </div>
 
-      {qrCode ? (
-        <div className="space-y-3">
-          <p className="text-sm text-[#6E6E73]">
-            Abra o WhatsApp no celular &rarr; Dispositivos conectados &rarr; Escanear QR Code
+      {connection.tokenExpired && (
+        <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2">
+          <AlertTriangle className="h-4 w-4 text-amber-600" />
+          <p className="text-xs text-amber-700">
+            Token expirado. Reconecte para continuar recebendo mensagens.
           </p>
-          <div className="inline-block rounded-xl border border-[#D2D2D7]/50 p-3 bg-white">
-            <img
-              src={qrCode.startsWith("data:") ? qrCode : `data:image/png;base64,${qrCode}`}
-              alt="QR Code WhatsApp"
-              className="h-48 w-48"
-            />
-          </div>
-          <div className="flex items-center gap-2 text-xs text-[#86868B]">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Aguardando conexão...
-          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto text-xs"
+            onClick={() => {
+              // TODO: implementar reconexão via FB.login
+            }}
+          >
+            <RefreshCw className="mr-1 h-3 w-3" />
+            Reconectar
+          </Button>
         </div>
-      ) : (
-        <Button
-          variant="outline"
-          className="active:scale-[0.98]"
-          onClick={handleConnect}
-        >
-          <Wifi className="mr-2 h-4 w-4" />
-          Conectar WhatsApp
-        </Button>
       )}
+
+      <Button
+        variant="ghost"
+        size="sm"
+        className="text-xs text-[#86868B] hover:text-red-600 active:scale-[0.98]"
+        onClick={() => onDisconnect(connection.id)}
+        disabled={disconnecting}
+      >
+        {disconnecting ? (
+          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+        )}
+        Desconectar
+      </Button>
     </div>
   )
 }

@@ -164,18 +164,30 @@ export interface Alert {
 }
 
 // WhatsApp types
-export type WhatsAppConnectionStatus = 'disconnected' | 'connecting' | 'connected'
+export type WhatsAppConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'banned' | 'rate_limited'
 export type WhatsAppMessageDirection = 'inbound' | 'outbound'
 export type WhatsAppMessageType = 'text' | 'audio' | 'image' | 'document' | 'location' | 'contact' | 'sticker' | 'other'
 export type WhatsAppConversationStatus = 'open' | 'ready_for_processing' | 'processing' | 'processed' | 'error' | 'skipped'
 export type AiSuggestionStatus = 'pending' | 'accepted' | 'edited' | 'dismissed'
 
+export type WhatsAppQualityRating = 'GREEN' | 'YELLOW' | 'RED'
+export type WhatsAppMessageStatus = 'received' | 'sent' | 'delivered' | 'read' | 'failed'
+export type WhatsAppTemplateCategory = 'MARKETING' | 'UTILITY' | 'AUTHENTICATION'
+export type WhatsAppTemplateStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED' | 'DISABLED'
+
 export interface WhatsAppConnection {
   id: string
   organization_id: string
-  instance_id: string
-  instance_token: string
-  client_token: string
+  meta_waba_id: string | null
+  meta_phone_number_id: string | null
+  meta_access_token: string | null
+  meta_token_expires_at: string | null
+  display_phone_number: string | null
+  verified_name: string | null
+  quality_rating: WhatsAppQualityRating
+  messaging_limit: string | null
+  label: string
+  webhook_verified: boolean
   status: WhatsAppConnectionStatus
   connected_phone: string | null
   connected_at: string | null
@@ -189,7 +201,8 @@ export interface WhatsAppMessage {
   id: string
   organization_id: string
   conversation_id: string | null
-  zapi_message_id: string | null
+  connection_id: string | null
+  meta_message_id: string | null
   phone: string
   supplier_id: string | null
   direction: WhatsAppMessageDirection
@@ -201,14 +214,33 @@ export interface WhatsAppMessage {
   sender_name: string | null
   sender_photo_url: string | null
   is_group: boolean
+  status: WhatsAppMessageStatus
+  error_code: string | null
+  error_message: string | null
+  context_message_id: string | null
   raw_payload: Record<string, unknown> | null
   message_timestamp: string
   created_at: string
 }
 
+export interface WhatsAppTemplate {
+  id: string
+  organization_id: string
+  connection_id: string | null
+  meta_template_id: string | null
+  name: string
+  language: string
+  category: WhatsAppTemplateCategory
+  status: WhatsAppTemplateStatus
+  components: Record<string, unknown>[]
+  created_at: string
+  updated_at: string
+}
+
 export interface WhatsAppConversation {
   id: string
   organization_id: string
+  connection_id: string | null
   supplier_id: string | null
   phone: string
   started_at: string
