@@ -124,7 +124,7 @@ export function WhatsAppSetup() {
     setConnecting(true)
 
     window.FB.login(
-      async (response) => {
+      (response) => {
         const code = response.authResponse?.code
 
         if (!code) {
@@ -133,32 +133,8 @@ export function WhatsAppSetup() {
           return
         }
 
-        try {
-          const res = await fetch("/api/whatsapp/embedded-signup", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ code }),
-          })
-
-          if (!res.ok) {
-            const data = await res.json()
-            toast.error(data.error || "Erro ao conectar WhatsApp.")
-            setConnecting(false)
-            return
-          }
-
-          const data = await res.json()
-          toast.success(
-            `WhatsApp conectado! ${data.connections?.length ?? 0} número(s) configurado(s).`
-          )
-
-          // Recarregar status
-          await fetchStatus()
-        } catch {
-          toast.error("Erro ao processar conexão.")
-        }
-
-        setConnecting(false)
+        // FB.login não aceita async callback — processar em função separada
+        processAuthCode(code)
       },
       {
         config_id: process.env.NEXT_PUBLIC_META_CONFIG_ID,
@@ -175,7 +151,38 @@ export function WhatsAppSetup() {
     )
   }
 
-  // ─── Disconnect ──────────────────────────────────────────────────────
+  // ─── Process Auth Code (separado do callback do FB.login) ──────────
+
+  async function processAuthCode(code: string) {
+    try {
+      const res = await fetch('/api/whatsapp/embedded-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        toast.error(data.error || 'Erro ao conectar WhatsApp.')
+        setConnecting(false)
+        return
+      }
+
+      const data = await res.json()
+      toast.success(
+        `WhatsApp conectado! ${data.connections?.length ?? 0} número(s) configurado(s).`
+      )
+
+      // Recarregar status
+      await fetchStatus()
+    } catch {
+      toast.error('Erro ao processar conexão.')
+    }
+
+    setConnecting(false)
+  }
+
+    // ─── Disconnect ──────────────────────────────────────────────────────
 
   async function handleDisconnect(connectionId: string) {
     setDisconnectingId(connectionId)
