@@ -316,7 +316,7 @@ function validateRow(row: ImportRow): ImportRow {
   // Warnings (non-blocking)
   if (!row.contact_name) warnings.push("Sem negociador")
   if (row.last_price === null) warnings.push("Sem preço")
-  if (!row.dcf_number.trim()) errors.push("Número DCF obrigatório")
+  if (!row.dcf_number.trim()) warnings.push("Sem número DCF")
   if (!row.dcf_issue_date) warnings.push("Sem data de emissão DCF")
 
   return { ...row, errors, warnings }
@@ -523,7 +523,7 @@ export function SupplierImport({
         monthly_capacity: row.monthly_capacity,
         contracted_loads: row.contracted_loads,
         last_price: row.last_price,
-        dcf_number: row.dcf_number.trim(),
+        dcf_number: row.dcf_number.trim() || null,
         dcf_issue_date: row.dcf_issue_date,
         notes: row.notes.trim() || null,
       }))
@@ -545,7 +545,7 @@ export function SupplierImport({
             monthly_capacity: row.monthly_capacity,
             contracted_loads: row.contracted_loads,
             last_price: row.last_price,
-            dcf_number: row.dcf_number.trim(),
+            dcf_number: row.dcf_number.trim() || null,
             dcf_issue_date: row.dcf_issue_date,
             notes: row.notes.trim() || null,
           }

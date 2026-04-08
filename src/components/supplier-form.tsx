@@ -141,7 +141,6 @@ export function SupplierForm({
       }
     }
 
-    if (!form.dcf_number.trim()) newErrors.dcf_number = "Número da DCF é obrigatório"
 
     if (!form.city.trim()) newErrors.city = "Cidade é obrigatória"
     if (!form.state) newErrors.state = "UF é obrigatória"
@@ -185,7 +184,7 @@ export function SupplierForm({
       monthly_capacity: Number(form.monthly_capacity),
       contracted_loads: Number(form.contracted_loads) || 0,
       last_price: form.last_price ? Number(form.last_price) : null,
-      dcf_number: form.dcf_number.trim(),
+      dcf_number: form.dcf_number.trim() || null,
       dcf_issue_date: form.dcf_issue_date || null,
       bank_name: form.bank_name.trim() || null,
       bank_agency: form.bank_agency.trim() || null,
@@ -305,7 +304,7 @@ export function SupplierForm({
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="dcf_number">Número da DCF *</Label>
+                <Label htmlFor="dcf_number">Número da DCF</Label>
                 <Input
                   id="dcf_number"
                   value={form.dcf_number}
