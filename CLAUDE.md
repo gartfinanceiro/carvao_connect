@@ -21,7 +21,7 @@ Carvão Connect é um **CRM de compras de carvão vegetal para siderúrgicas e g
 | UI | Tailwind CSS v4 + shadcn/ui (@base-ui/react) + Lucide icons |
 | Backend | Supabase (Postgres + Auth + Realtime + Edge Functions) |
 | Billing | Stripe (checkout, portal, webhooks) |
-| WhatsApp | Z-API (instância conectada, processamento via cron) |
+| WhatsApp | Meta Cloud API (Graph API v21.0, Embedded Signup, webhooks push) |
 | PDF | jsPDF + jspdf-autotable |
 | Deploy | Vercel |
 | Domínio | carvaoconnect.com.br |
@@ -91,16 +91,22 @@ Gerenciamento da fila de chegada de cargas.
 
 Entrada com: fornecedor, tipo (agendada/fila/espontânea), placa, motorista, volume estimado, data/horário agendado. Status: aguardando → descarregando → concluído/cancelado. Posição automática na fila via trigger. Compartilhamento via WhatsApp.
 
-### Módulo 6 — WhatsApp (Z-API) ✅ (estrutura pronta)
-Integração com WhatsApp via Z-API para captura automática de mensagens.
+### Módulo 6 — WhatsApp (Meta Cloud API) ✅
+Integração com WhatsApp via Meta Cloud API (Graph API v21.0).
 
-Tabelas: `whatsapp_connections`, `whatsapp_messages`, `whatsapp_conversations`, `ai_suggestions`.
+Conexão via **Embedded Signup** (OAuth) — sem QR code. Suporte a múltiplos números por organização. Tokens de 60 dias com detecção de expiração.
 
-Fluxo: webhook recebe mensagens → agrupa em conversas (30min gap) → cron processa com GPT-4o mini (function calling) → gera sugestões de interação → usuário confirma/edita/descarta no feed.
+Tabelas: `whatsapp_connections`, `whatsapp_messages`, `whatsapp_conversations`, `whatsapp_templates`, `ai_suggestions`.
 
-Status: instância Z-API configurada, webhook ativo. Não conectado em produção.
+Fluxo: webhook push recebe mensagens → agrupa em conversas (30min gap) → cron processa com GPT-4o mini (function calling) → gera sugestões de interação → usuário confirma/edita/descarta no feed.
 
-Z-API só disponível no plano Professional.
+API routes: `webhook/` (verificação + recebimento), `embedded-signup/` (OAuth + registro), `status/` (conexões + validação token), `disconnect/` (revogação), `qrcode/` (legacy, redireciona para reconexão).
+
+Frontend: `whatsapp-setup.tsx` carrega Facebook SDK, dispara Embedded Signup, exibe conexões com quality rating (GREEN/YELLOW/RED) e messaging limits.
+
+Envs: `NEXT_PUBLIC_META_APP_ID`, `NEXT_PUBLIC_META_CONFIG_ID`, `META_APP_ID`, `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN`.
+
+WhatsApp só disponível no plano Professional.
 
 ### Módulo 7 — Configurações ✅
 Dados da conta, billing (Stripe portal), equipe (convites, roles, permissões), configuração WhatsApp.
@@ -170,9 +176,10 @@ src/
 ├── app/
 │   ├── layout.tsx, page.tsx, login/, registro/, onboarding/, convite/
 │   ├── auth/callback/route.ts
-│   ├── api/ (13 routes: register, checkout, verify-checkout, portal, webhooks/stripe,
+│   ├── api/ (14 routes: register, checkout, verify-checkout, portal, webhooks/stripe,
 │   │         team/members, invites, invites/accept, invites/info,
-│   │         whatsapp/status, whatsapp/qrcode, whatsapp/disconnect,
+│   │         whatsapp/webhook, whatsapp/embedded-signup, whatsapp/status,
+│   │         whatsapp/disconnect, whatsapp/qrcode (legacy),
 │   │         cron/process-conversations)
 │   └── (app)/
 │       ├── layout.tsx, page.tsx (Feed)
@@ -185,7 +192,7 @@ src/
 │   ├── subscription-provider, trial-banner, landing-page, empty-state
 │   ├── ai-suggestion-card, conversation-viewer, whatsapp-setup, quick-interaction, activity-feed
 ├── lib/
-│   ├── classification.ts, permissions.ts, labels.ts, utils.ts, stripe.ts, zapi.ts
+│   ├── classification.ts, permissions.ts, labels.ts, utils.ts, stripe.ts, meta-whatsapp.ts
 │   ├── generate-discharge-report.ts
 │   └── supabase/ (admin, client, middleware, server)
 ├── types/database.ts
@@ -200,7 +207,8 @@ STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
 STRIPE_STARTER_PRICE_ID=price_1TCkfM0Lp3rgiKT40WBqH058
 STRIPE_PROFESSIONAL_PRICE_ID=price_1TCkfe0Lp3rgiKT4lzXvj2K7
 NEXT_PUBLIC_SITE_URL=https://carvaoconnect.com.br
-ZAPI_INSTANCE_ID, ZAPI_INSTANCE_TOKEN, ZAPI_CLIENT_TOKEN
+NEXT_PUBLIC_META_APP_ID, NEXT_PUBLIC_META_CONFIG_ID
+META_APP_ID, META_APP_SECRET, META_WEBHOOK_VERIFY_TOKEN
 CRON_SECRET
 ```
 
@@ -220,6 +228,6 @@ CRON_SECRET
 ## Pendências
 
 - Testar fluxo completo de registro Stripe (cartão teste 4242 4242 4242 4242)
-- Diagnóstico WhatsApp + IA (captura de mensagens)
+- Diagnóstico WhatsApp Meta Cloud API + IA (webhook em produção, Embedded Signup, captura de mensagens)
 - Deploy produção com todas as variáveis configuradas
 - Contato com Rúvia (design partner) para demo
