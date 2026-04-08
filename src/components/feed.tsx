@@ -195,7 +195,7 @@ export function Feed({ userName }: FeedProps) {
       // Pipeline: interactions with load_promised this month
       supabase
         .from("interactions")
-        .select("promised_status, supplier:suppliers(name)")
+        .select("promised_status, promised_volume, supplier:suppliers(name)")
         .eq("load_promised", true)
         .gte("created_at", monthStartISO),
       // Cancelled loads (recent 5)
@@ -271,21 +271,26 @@ export function Feed({ userName }: FeedProps) {
     setTotalPendingAlerts(allPending.length)
 
     // Pipeline — map DB enum values (singular) to display counts (plural)
-    const pipeData = (pipelineResult.data ?? []) as Array<{ promised_status: string | null; supplier: unknown }>
-    const pipeTotal = pipeData.length
-    const pipeCounts = { prometidas: pipeTotal, agendadas: 0, entregues: 0, canceladas: 0, adiadas: 0, pendentes: 0 }
+    // Usa promised_volume (quantidade de cargas) em vez de contar 1 por interação
+    const pipeData = (pipelineResult.data ?? []) as Array<{ promised_status: string | null; promised_volume: number | null; supplier: unknown }>
+    let pipeTotal = 0
+    const pipeCounts = { prometidas: 0, agendadas: 0, entregues: 0, canceladas: 0, adiadas: 0, pendentes: 0 }
     const pipeDetails: Record<string, string[]> = { prometidas: [], agendadas: [], entregues: [], canceladas: [], pendentes: [] }
     for (const p of pipeData) {
       const sup = p.supplier as { name: string } | { name: string }[] | null
       const name = Array.isArray(sup) ? sup[0]?.name : sup?.name ?? "Fornecedor"
-      pipeDetails.prometidas.push(name)
+      const qty = p.promised_volume ?? 1
+      pipeTotal += qty
+      const detailText = qty > 1 ? `${name} (${qty} cargas)` : name
+      pipeDetails.prometidas.push(detailText)
       const st = p.promised_status ?? "pendente"
-      if (st === "pendente") { pipeCounts.pendentes++; pipeDetails.pendentes.push(name) }
-      else if (st === "agendada") { pipeCounts.agendadas++; pipeDetails.agendadas.push(name) }
-      else if (st === "entregue") { pipeCounts.entregues++; pipeDetails.entregues.push(name) }
-      else if (st === "cancelada") { pipeCounts.canceladas++; pipeDetails.canceladas.push(name) }
-      else if (st === "adiada") pipeCounts.adiadas++
+      if (st === "pendente") { pipeCounts.pendentes += qty; pipeDetails.pendentes.push(detailText) }
+      else if (st === "agendada") { pipeCounts.agendadas += qty; pipeDetails.agendadas.push(detailText) }
+      else if (st === "entregue") { pipeCounts.entregues += qty; pipeDetails.entregues.push(detailText) }
+      else if (st === "cancelada") { pipeCounts.canceladas += qty; pipeDetails.canceladas.push(detailText) }
+      else if (st === "adiada") pipeCounts.adiadas += qty
     }
+    pipeCounts.prometidas = pipeTotal
     setPipeline(pipeCounts)
     setPipelineDetails(pipeDetails)
 
