@@ -24,6 +24,7 @@ import {
   CheckCircle2,
   Loader2,
   Circle,
+  Files,
 } from "lucide-react"
 import {
   supplierDocumentTypeLabels,
@@ -62,9 +63,16 @@ export function SupplierDocuments({
 }: SupplierDocumentsProps) {
   const [documents, setDocuments] = useState<SupplierDocument[]>([])
   const [loading, setLoading] = useState(true)
-  const [uploading, setUploading] = useState<string | null>(null)
+  // Map de tipo -> quantidade de arquivos em upload simultâneo
+  const [uploadingMap, setUploadingMap] = useState<Record<string, number>>({})
   const [deleteTarget, setDeleteTarget] = useState<SupplierDocument | null>(null)
   const [deleting, setDeleting] = useState(false)
+  // Estado de drag & drop
+  const [dragOver, setDragOver] = useState(false)
+  const [dragOverType, setDragOverType] = useState<SupplierDocumentType | null>(null)
+  // Dialog para escolher categoria quando drag & drop genérico
+  const [pendingFiles, setPendingFiles] = useState<File[] | null>(null)
+
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadTypeRef = useRef<SupplierDocumentType | null>(null)
 
@@ -99,29 +107,11 @@ export function SupplierDocuments({
     {}
   )
 
-  function handleAttachClick(type: SupplierDocumentType) {
-    uploadTypeRef.current = type
-    fileInputRef.current?.click()
-  }
-
-  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    const docType = uploadTypeRef.current
-    if (!file || !docType) return
-
-    // Reset input
-    e.target.value = ""
-
-    // Validar tamanho
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error("Arquivo muito grande. Máximo: 10MB.")
-      return
-    }
-
-    setUploading(docType)
+  // Upload de um único arquivo (retorna true/false)
+  async function uploadSingleFile(file: File, docType: SupplierDocumentType): Promise<boolean> {
     const supabase = createClient()
 
-    const timestamp = Date.now()
+    const timestamp = Date.now() + Math.random().toString(36).slice(2, 6)
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_")
     const filePath = `${organizationId}/${supplierId}/${docType}_${timestamp}_${safeName}`
 
@@ -132,9 +122,7 @@ export function SupplierDocuments({
 
     if (uploadError) {
       console.error("Erro no upload:", uploadError)
-      toast.error("Erro ao enviar arquivo.")
-      setUploading(null)
-      return
+      return false
     }
 
     // 2. Obter user_id
@@ -158,16 +146,160 @@ export function SupplierDocuments({
 
     if (insertError) {
       console.error("Erro ao salvar registro:", insertError)
-      // Limpar arquivo órfão
       await supabase.storage.from("supplier-documents").remove([filePath])
-      toast.error("Erro ao registrar documento.")
-      setUploading(null)
-      return
+      return false
     }
 
-    toast.success("Documento anexado com sucesso!")
-    setUploading(null)
+    return true
+  }
+
+  // Upload de múltiplos arquivos para um tipo
+  async function uploadFiles(files: File[], docType: SupplierDocumentType) {
+    if (files.length === 0) return
+
+    // Filtrar arquivos que excedem o limite
+    const validFiles: File[] = []
+    const oversized: string[] = []
+    for (const file of files) {
+      if (file.size > MAX_FILE_SIZE) {
+        oversized.push(file.name)
+      } else {
+        validFiles.push(file)
+      }
+    }
+
+    if (oversized.length > 0) {
+      toast.error(
+        `${oversized.length} arquivo(s) excede(m) 10MB e será(ão) ignorado(s): ${oversized.join(", ")}`
+      )
+    }
+
+    if (validFiles.length === 0) return
+
+    // Atualizar estado de uploading
+    setUploadingMap((prev) => ({
+      ...prev,
+      [docType]: (prev[docType] || 0) + validFiles.length,
+    }))
+
+    // Fazer upload em paralelo (max 3 por vez para não sobrecarregar)
+    const BATCH_SIZE = 3
+    let successCount = 0
+    let failCount = 0
+
+    for (let i = 0; i < validFiles.length; i += BATCH_SIZE) {
+      const batch = validFiles.slice(i, i + BATCH_SIZE)
+      const results = await Promise.all(
+        batch.map((file) => uploadSingleFile(file, docType))
+      )
+      results.forEach((ok) => {
+        if (ok) successCount++
+        else failCount++
+      })
+
+      // Atualizar progresso: decrementar os concluídos deste batch
+      setUploadingMap((prev) => ({
+        ...prev,
+        [docType]: Math.max(0, (prev[docType] || 0) - batch.length),
+      }))
+    }
+
+    // Limpar estado final
+    setUploadingMap((prev) => {
+      const next = { ...prev }
+      delete next[docType]
+      return next
+    })
+
+    // Feedback consolidado
+    if (successCount > 0 && failCount === 0) {
+      toast.success(
+        successCount === 1
+          ? "Documento anexado com sucesso!"
+          : `${successCount} documentos anexados com sucesso!`
+      )
+    } else if (successCount > 0 && failCount > 0) {
+      toast.warning(
+        `${successCount} enviado(s), ${failCount} falharam.`
+      )
+    } else {
+      toast.error("Erro ao enviar arquivo(s).")
+    }
+
     fetchDocuments()
+  }
+
+  function handleAttachClick(type: SupplierDocumentType) {
+    uploadTypeRef.current = type
+    fileInputRef.current?.click()
+  }
+
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const fileList = e.target.files
+    const docType = uploadTypeRef.current
+    if (!fileList || fileList.length === 0 || !docType) return
+
+    // Reset input
+    e.target.value = ""
+
+    const files = Array.from(fileList)
+    await uploadFiles(files, docType)
+  }
+
+  // Drag & drop handlers
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    // Só desativa se saiu do card (não de um filho)
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragOver(false)
+    setDragOverType(null)
+  }
+
+  function handleTypeDragOver(e: React.DragEvent, type: SupplierDocumentType) {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOverType(type)
+  }
+
+  function handleTypeDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return
+    setDragOverType(null)
+  }
+
+  async function handleDrop(e: React.DragEvent, type?: SupplierDocumentType) {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragOver(false)
+    setDragOverType(null)
+
+    const fileList = e.dataTransfer.files
+    if (!fileList || fileList.length === 0) return
+
+    const files = Array.from(fileList)
+
+    if (type) {
+      // Drop direto na categoria
+      await uploadFiles(files, type)
+    } else {
+      // Drop genérico — abrir dialog para escolher categoria
+      setPendingFiles(files)
+    }
+  }
+
+  function handleSelectCategoryForPending(type: SupplierDocumentType) {
+    if (!pendingFiles) return
+    const files = pendingFiles
+    setPendingFiles(null)
+    uploadFiles(files, type)
   }
 
   async function handleDownload(doc: SupplierDocument) {
@@ -231,33 +363,76 @@ export function SupplierDocuments({
     )
   }
 
+  const totalUploading = Object.values(uploadingMap).reduce((a, b) => a + b, 0)
+
   return (
     <>
-      <Card>
+      <Card
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => handleDrop(e)}
+        className={`relative transition-colors ${
+          dragOver ? "ring-2 ring-primary/50 bg-primary/5" : ""
+        }`}
+      >
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileCheck className="h-5 w-5" />
             Documentação
+            {totalUploading > 0 && (
+              <span className="ml-auto text-xs font-normal text-muted-foreground flex items-center gap-1.5">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Enviando {totalUploading} arquivo(s)...
+              </span>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {/* Input de arquivo oculto */}
+          {/* Input de arquivo oculto — agora com multiple */}
           <input
             ref={fileInputRef}
             type="file"
             accept={ACCEPTED_TYPES}
+            multiple
             className="hidden"
             onChange={handleFileSelected}
           />
+
+          {/* Overlay de drag & drop */}
+          {dragOver && !dragOverType && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 rounded-lg border-2 border-dashed border-primary/50 pointer-events-none">
+              <div className="text-center">
+                <Files className="h-10 w-10 text-primary/60 mx-auto mb-2" />
+                <p className="text-sm font-medium text-primary/80">
+                  Solte os arquivos sobre uma categoria
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  ou solte aqui para escolher a categoria depois
+                </p>
+              </div>
+            </div>
+          )}
 
           <div className="space-y-1">
             {DOCUMENT_TYPES.map((type) => {
               const typeDocs = docsByType[type] ?? []
               const hasFiles = typeDocs.length > 0
-              const isUploading = uploading === type
+              const uploadCount = uploadingMap[type] || 0
+              const isUploading = uploadCount > 0
+              const isDropTarget = dragOverType === type
 
               return (
-                <div key={type} className="rounded-lg border">
+                <div
+                  key={type}
+                  className={`rounded-lg border transition-colors ${
+                    isDropTarget
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/30"
+                      : ""
+                  }`}
+                  onDragOver={(e) => handleTypeDragOver(e, type)}
+                  onDragLeave={handleTypeDragLeave}
+                  onDrop={(e) => handleDrop(e, type)}
+                >
                   {/* Cabeçalho do tipo */}
                   <div className="flex items-start gap-3 p-3">
                     <div className="mt-0.5">
@@ -285,7 +460,10 @@ export function SupplierDocuments({
                       onClick={() => handleAttachClick(type)}
                     >
                       {isUploading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                          {uploadCount > 1 ? `${uploadCount}` : ""}
+                        </>
                       ) : (
                         <Upload className="h-3.5 w-3.5 mr-1" />
                       )}
@@ -369,6 +547,53 @@ export function SupplierDocuments({
             >
               {deleting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog para escolher categoria (quando drag & drop genérico) */}
+      <Dialog
+        open={!!pendingFiles}
+        onOpenChange={(open) => !open && setPendingFiles(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Escolha a categoria</DialogTitle>
+            <DialogDescription>
+              {pendingFiles?.length === 1
+                ? `Para qual categoria deseja anexar "${pendingFiles[0].name}"?`
+                : `Para qual categoria deseja anexar ${pendingFiles?.length} arquivo(s)?`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-1.5 max-h-[50vh] overflow-y-auto py-2">
+            {DOCUMENT_TYPES.map((type) => (
+              <button
+                key={type}
+                className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg hover:bg-muted transition-colors"
+                onClick={() => handleSelectCategoryForPending(type)}
+              >
+                <div className="shrink-0">
+                  {(docsByType[type]?.length ?? 0) > 0 ? (
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground/40" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {supplierDocumentTypeLabels[type]}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {supplierDocumentTypeDescriptions[type]}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingFiles(null)}>
+              Cancelar
             </Button>
           </DialogFooter>
         </DialogContent>
