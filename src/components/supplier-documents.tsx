@@ -239,10 +239,13 @@ export function SupplierDocuments({
     const docType = uploadTypeRef.current
     if (!fileList || fileList.length === 0 || !docType) return
 
-    // Reset input
+    // Converter FileList para array ANTES de resetar o input
+    // (resetar o input invalida o FileList em alguns browsers)
+    const files = Array.from(fileList)
+
+    // Reset input para permitir re-seleção do mesmo arquivo
     e.target.value = ""
 
-    const files = Array.from(fileList)
     await uploadFiles(files, docType)
   }
 
