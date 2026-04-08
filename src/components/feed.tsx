@@ -31,7 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { MessageSquare, UserPlus, Phone, CalendarClock, Truck, ChevronRight as ChevronRightIcon, XCircle } from "lucide-react"
+import { MessageSquare, UserPlus, Phone, CalendarClock, Truck, ChevronRight as ChevronRightIcon, XCircle, Info } from "lucide-react"
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { format } from "date-fns"
 import { ptBR } from "date-fns/locale"
 import { convertVolume, unitLabel } from "@/lib/utils"
@@ -67,11 +68,16 @@ export function Feed({ userName }: FeedProps) {
   const [dischargesWeekRaw, setDischargesWeekRaw] = useState<{ volume_mdc: number; density_kg_mdc: number | null }[]>([])
   const [dischargesMonthRaw, setDischargesMonthRaw] = useState<{ volume_mdc: number; density_kg_mdc: number | null }[]>([])
   const [unit, setUnit] = useState<VolumeUnit>("mdc")
+  const [expandedCard, setExpandedCard] = useState<string | null>(null)
   const [totalPendingAlerts, setTotalPendingAlerts] = useState(0)
+  const [queueTodayDetails, setQueueTodayDetails] = useState<Array<{ name: string; plate?: string; volume?: number; status?: string }>>([])
+  const [dischargesWeekDetails, setDischargesWeekDetails] = useState<Array<{ name: string; volume: number }>>([])
+  const [dischargesMonthDetails, setDischargesMonthDetails] = useState<Array<{ name: string; volume: number }>>([])
 
   // Pipeline
   const [pipeline, setPipeline] = useState({ prometidas: 0, agendadas: 0, entregues: 0, canceladas: 0, adiadas: 0, pendentes: 0 })
   const [cancelledLoads, setCancelledLoads] = useState<Array<{ supplier_name: string; reason: string | null; date: string }>>([])
+  const [pipelineDetails, setPipelineDetails] = useState<Record<string, string[]>>({ prometidas: [], agendadas: [], entregues: [], canceladas: [], pendentes: [] })
 
   // Interaction form
   const [interactionOpen, setInteractionOpen] = useState(false)
@@ -162,7 +168,7 @@ export function Feed({ userName }: FeedProps) {
         .limit(20),
       supabase
         .from("queue_entries")
-        .select("id", { count: "exact", head: true })
+        .select("id, supplier:suppliers(name), plate, estimated_volume, status")
         .eq("scheduled_date", todayDateStr)
         .neq("status", "cancelado"),
       supabase
@@ -173,12 +179,12 @@ export function Feed({ userName }: FeedProps) {
         .neq("status", "cancelado"),
       supabase
         .from("discharges")
-        .select("volume_mdc, density_kg_mdc")
+        .select("volume_mdc, density_kg_mdc, supplier:suppliers(name)")
         .gte("discharge_date", weekStartStr)
         .lte("discharge_date", todayDateStr),
       supabase
         .from("discharges")
-        .select("volume_mdc, density_kg_mdc")
+        .select("volume_mdc, density_kg_mdc, supplier:suppliers(name)")
         .gte("discharge_date", monthStartStr)
         .lte("discharge_date", todayDateStr),
       supabase
@@ -189,7 +195,7 @@ export function Feed({ userName }: FeedProps) {
       // Pipeline: interactions with load_promised this month
       supabase
         .from("interactions")
-        .select("promised_status")
+        .select("promised_status, supplier:suppliers(name)")
         .eq("load_promised", true)
         .gte("created_at", monthStartISO),
       // Cancelled loads (recent 5)
@@ -222,16 +228,37 @@ export function Feed({ userName }: FeedProps) {
     setTodayAlerts(todayList)
     setUpcoming(upcomingList)
     setDoneToday((doneResult.data as AlertWithSupplier[]) ?? [])
-    setQueueToday(queueTodayResult.count ?? 0)
+    // Queue today details
+    const queueTodayData = (queueTodayResult.data ?? []) as Array<{ id: string; supplier: unknown; plate: string | null; estimated_volume: number | null; status: string }>
+    setQueueToday(queueTodayData.length)
+    setQueueTodayDetails(queueTodayData.map(q => {
+      const sup = q.supplier as { name: string } | { name: string }[] | null
+      const name = Array.isArray(sup) ? sup[0]?.name : sup?.name
+      return { name: name ?? "Fornecedor", plate: q.plate ?? undefined, volume: q.estimated_volume ?? undefined, status: q.status }
+    }))
     setQueueWeek(queueWeekResult.count ?? 0)
-    const weekRaw = (dischargesWeekResult.data ?? []).map((d: { volume_mdc: number; density_kg_mdc: number | null }) => ({
+    const weekRawData = (dischargesWeekResult.data ?? []) as Array<{ volume_mdc: number; density_kg_mdc: number | null; supplier: unknown }>
+    const weekRaw = weekRawData.map(d => ({
       volume_mdc: Number(d.volume_mdc),
       density_kg_mdc: d.density_kg_mdc,
     }))
-    const monthRaw = (dischargesMonthResult.data ?? []).map((d: { volume_mdc: number; density_kg_mdc: number | null }) => ({
+    const monthRawData = (dischargesMonthResult.data ?? []) as Array<{ volume_mdc: number; density_kg_mdc: number | null; supplier: unknown }>
+    const monthRaw = monthRawData.map(d => ({
       volume_mdc: Number(d.volume_mdc),
       density_kg_mdc: d.density_kg_mdc,
     }))
+    // Aggregate by supplier name for details
+    const aggregateBySupplier = (data: Array<{ volume_mdc: number; supplier: unknown }>) => {
+      const map = new Map<string, number>()
+      for (const d of data) {
+        const sup = d.supplier as { name: string } | { name: string }[] | null
+        const name = Array.isArray(sup) ? sup[0]?.name : sup?.name
+        map.set(name ?? "Fornecedor", (map.get(name ?? "Fornecedor") ?? 0) + Number(d.volume_mdc))
+      }
+      return Array.from(map.entries()).map(([name, volume]) => ({ name, volume: Math.round(volume * 10) / 10 }))
+    }
+    setDischargesWeekDetails(aggregateBySupplier(weekRawData))
+    setDischargesMonthDetails(aggregateBySupplier(monthRawData))
     setDischargesWeekRaw(weekRaw)
     setDischargesMonthRaw(monthRaw)
     setDischargesWeekVolume(
@@ -244,18 +271,23 @@ export function Feed({ userName }: FeedProps) {
     setTotalPendingAlerts(allPending.length)
 
     // Pipeline — map DB enum values (singular) to display counts (plural)
-    const pipeData = (pipelineResult.data ?? []) as Array<{ promised_status: string | null }>
+    const pipeData = (pipelineResult.data ?? []) as Array<{ promised_status: string | null; supplier: unknown }>
     const pipeTotal = pipeData.length
     const pipeCounts = { prometidas: pipeTotal, agendadas: 0, entregues: 0, canceladas: 0, adiadas: 0, pendentes: 0 }
+    const pipeDetails: Record<string, string[]> = { prometidas: [], agendadas: [], entregues: [], canceladas: [], pendentes: [] }
     for (const p of pipeData) {
+      const sup = p.supplier as { name: string } | { name: string }[] | null
+      const name = Array.isArray(sup) ? sup[0]?.name : sup?.name ?? "Fornecedor"
+      pipeDetails.prometidas.push(name)
       const st = p.promised_status ?? "pendente"
-      if (st === "pendente") pipeCounts.pendentes++
-      else if (st === "agendada") pipeCounts.agendadas++
-      else if (st === "entregue") pipeCounts.entregues++
-      else if (st === "cancelada") pipeCounts.canceladas++
+      if (st === "pendente") { pipeCounts.pendentes++; pipeDetails.pendentes.push(name) }
+      else if (st === "agendada") { pipeCounts.agendadas++; pipeDetails.agendadas.push(name) }
+      else if (st === "entregue") { pipeCounts.entregues++; pipeDetails.entregues.push(name) }
+      else if (st === "cancelada") { pipeCounts.canceladas++; pipeDetails.canceladas.push(name) }
       else if (st === "adiada") pipeCounts.adiadas++
     }
     setPipeline(pipeCounts)
+    setPipelineDetails(pipeDetails)
 
     // Cancelled loads
     const cancelled = (cancelledResult.data ?? []) as Array<{
@@ -655,20 +687,86 @@ export function Feed({ userName }: FeedProps) {
           const monthVol = unit === "mdc"
             ? dischargesMonthVolume
             : dischargesMonthRaw.reduce((sum, d) => sum + convertVolume(d.volume_mdc, d.density_kg_mdc, unit), 0)
-          return [
-            { label: "Cargas hoje", value: String(queueToday), sub: `${queueWeek} na semana`, color: "text-foreground" },
-            { label: "Volume semana", value: (Math.round(weekVol * 10) / 10).toLocaleString("pt-BR"), sub: unitLabel(unit), color: "text-foreground" },
-            { label: "Volume mês", value: (Math.round(monthVol * 10) / 10).toLocaleString("pt-BR"), sub: unitLabel(unit), color: "text-foreground" },
-            { label: "Alertas pendentes", value: String(totalPendingAlerts), sub: overdue.length > 0 ? `${overdue.length} atrasados` : null as string | null, color: totalPendingAlerts > 0 ? "text-red-600" : "text-foreground" },
-          ].map((stat) => (
-            <div key={stat.label} className="p-5 rounded-2xl border border-border bg-white" style={{ boxShadow: "var(--shadow-card)" }}>
-              <p className="text-[13px] font-medium text-muted-foreground">{stat.label}</p>
-              <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${stat.color}`}>
-                {stat.value}
-              </p>
-              {stat.sub && <p className="text-[12px] text-muted-foreground mt-0.5">{stat.sub}</p>}
-            </div>
-          ))
+          const kpiCards = [
+            {
+              key: "cargas-hoje",
+              label: "Cargas hoje",
+              value: String(queueToday),
+              sub: `${queueWeek} na semana`,
+              color: "text-foreground",
+              details: queueTodayDetails.length > 0
+                ? queueTodayDetails.map(q => `${q.name}${q.plate ? ` — Placa ${q.plate}` : ""}${q.volume ? ` — ${q.volume} MDC` : ""}`)
+                : ["Nenhuma carga agendada para hoje"],
+            },
+            {
+              key: "volume-semana",
+              label: "Volume semana",
+              value: (Math.round(weekVol * 10) / 10).toLocaleString("pt-BR"),
+              sub: unitLabel(unit),
+              color: "text-foreground",
+              details: dischargesWeekDetails.length > 0
+                ? dischargesWeekDetails.map(d => `${d.name} — ${d.volume.toLocaleString("pt-BR")} MDC`)
+                : ["Nenhuma descarga na semana"],
+            },
+            {
+              key: "volume-mes",
+              label: "Volume mês",
+              value: (Math.round(monthVol * 10) / 10).toLocaleString("pt-BR"),
+              sub: unitLabel(unit),
+              color: "text-foreground",
+              details: dischargesMonthDetails.length > 0
+                ? dischargesMonthDetails.map(d => `${d.name} — ${d.volume.toLocaleString("pt-BR")} MDC`)
+                : ["Nenhuma descarga no mês"],
+            },
+            {
+              key: "alertas",
+              label: "Alertas pendentes",
+              value: String(totalPendingAlerts),
+              sub: overdue.length > 0 ? `${overdue.length} atrasados` : null as string | null,
+              color: totalPendingAlerts > 0 ? "text-red-600" : "text-foreground",
+              details: totalPendingAlerts > 0
+                ? [...overdue, ...todayAlerts, ...upcoming].slice(0, 8).map(a => {
+                    const sup = a.supplier as { name: string } | { name: string }[] | null
+                    const name = Array.isArray(sup) ? sup[0]?.name : sup?.name
+                    return `${name ?? "Fornecedor"} — ${a.type === "follow_up" ? "Follow-up" : a.type === "retorno_automatico" ? "Retorno automático" : a.type === "vencimento_doc" ? "Vencimento docs" : a.type === "confirmacao_carga" ? "Confirmar carga" : "Inatividade"}`
+                  })
+                : ["Nenhum alerta pendente"],
+            },
+          ]
+          return kpiCards.map((stat) => {
+            const isExpanded = expandedCard === stat.key
+            return (
+              <div
+                key={stat.key}
+                className="rounded-2xl border border-border bg-white cursor-pointer transition-all hover:border-primary/30"
+                style={{ boxShadow: "var(--shadow-card)" }}
+                onClick={() => setExpandedCard(isExpanded ? null : stat.key)}
+              >
+                <div className="p-5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[13px] font-medium text-muted-foreground">{stat.label}</p>
+                    <Tooltip>
+                      <TooltipTrigger onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <span className="cursor-help"><Info className={`h-3.5 w-3.5 transition-colors ${isExpanded ? "text-primary" : "text-muted-foreground/30"}`} /></span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" sideOffset={8}>Clique no card para ver detalhes</TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${stat.color}`}>
+                    {stat.value}
+                  </p>
+                  {stat.sub && <p className="text-[12px] text-muted-foreground mt-0.5">{stat.sub}</p>}
+                </div>
+                {isExpanded && (
+                  <div className="border-t border-border/60 px-5 py-3 space-y-1.5">
+                    {stat.details.map((detail, i) => (
+                      <p key={i} className="text-[12px] text-muted-foreground">{detail}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })
         })()}
       </div>
 
@@ -681,29 +779,64 @@ export function Feed({ userName }: FeedProps) {
         const pct = (n: number) => pipeline.prometidas > 0 ? Math.round((n / pipeline.prometidas) * 100) : 0
 
         const pipeCards = [
-          { label: "Prometidas", value: pipeline.prometidas, pct: null as number | null, color: "text-foreground" },
-          { label: "Agendadas", value: pipeline.agendadas, pct: pct(pipeline.agendadas), color: "text-blue-600" },
-          { label: "Entregues", value: pipeline.entregues, pct: pct(pipeline.entregues), color: "text-green-600" },
-          { label: "Canceladas", value: pipeline.canceladas, pct: pct(pipeline.canceladas), color: "text-red-600" },
-          { label: "Pendentes", value: pipeline.pendentes, pct: null, color: "text-amber-600" },
+          { key: "prometidas", label: "Prometidas", value: pipeline.prometidas, pct: null as number | null, color: "text-foreground" },
+          { key: "agendadas", label: "Agendadas", value: pipeline.agendadas, pct: pct(pipeline.agendadas), color: "text-blue-600" },
+          { key: "entregues", label: "Entregues", value: pipeline.entregues, pct: pct(pipeline.entregues), color: "text-green-600" },
+          { key: "canceladas", label: "Canceladas", value: pipeline.canceladas, pct: pct(pipeline.canceladas), color: "text-red-600" },
+          { key: "pendentes", label: "Pendentes", value: pipeline.pendentes, pct: null, color: "text-amber-600" },
         ]
 
         return (
           <div className="mb-8">
             <span className="text-xs text-muted-foreground font-medium">Pipeline de negociação — {currentMonthName} {new Date().getFullYear()}</span>
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mt-2">
-              {pipeCards.map((card, i) => (
-                <div key={card.label} className="relative p-5 rounded-2xl border border-border bg-white" style={{ boxShadow: "var(--shadow-card)" }}>
-                  <p className="text-[13px] font-medium text-muted-foreground">{card.label}</p>
-                  <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${card.color}`}>
-                    {card.value}
-                  </p>
-                  {card.pct !== null && <p className="text-[12px] text-muted-foreground mt-0.5">{card.pct}%</p>}
-                  {i < 2 && (
-                    <ChevronRightIcon className="hidden lg:block absolute -right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/30 z-10" />
-                  )}
-                </div>
-              ))}
+              {pipeCards.map((card, i) => {
+                const pipeKey = `pipe-${card.key}`
+                const isExpanded = expandedCard === pipeKey
+                const details = pipelineDetails[card.key] ?? []
+                // Count occurrences of each supplier name
+                const supplierCounts = new Map<string, number>()
+                for (const name of details) {
+                  supplierCounts.set(name, (supplierCounts.get(name) ?? 0) + 1)
+                }
+                const detailLines = details.length > 0
+                  ? Array.from(supplierCounts.entries()).map(([name, count]) => count > 1 ? `${name} (${count})` : name)
+                  : [`Nenhuma carga ${card.label.toLowerCase()}`]
+                return (
+                  <div
+                    key={card.key}
+                    className="relative rounded-2xl border border-border bg-white cursor-pointer transition-all hover:border-primary/30"
+                    style={{ boxShadow: "var(--shadow-card)" }}
+                    onClick={() => setExpandedCard(isExpanded ? null : pipeKey)}
+                  >
+                    <div className="p-5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[13px] font-medium text-muted-foreground">{card.label}</p>
+                        <Tooltip>
+                      <TooltipTrigger onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <span className="cursor-help"><Info className={`h-3.5 w-3.5 transition-colors ${isExpanded ? "text-primary" : "text-muted-foreground/30"}`} /></span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" sideOffset={8}>Clique no card para ver detalhes</TooltipContent>
+                    </Tooltip>
+                      </div>
+                      <p className={`text-[36px] font-extrabold tracking-tight mt-1 leading-none ${card.color}`}>
+                        {card.value}
+                      </p>
+                      {card.pct !== null && <p className="text-[12px] text-muted-foreground mt-0.5">{card.pct}%</p>}
+                    </div>
+                    {isExpanded && (
+                      <div className="border-t border-border/60 px-5 py-3 space-y-1.5">
+                        {detailLines.map((detail, j) => (
+                          <p key={j} className="text-[12px] text-muted-foreground">{detail}</p>
+                        ))}
+                      </div>
+                    )}
+                    {i < 2 && (
+                      <ChevronRightIcon className="hidden lg:block absolute -right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/30 z-10" />
+                    )}
+                  </div>
+                )
+              })}
             </div>
 
             {/* Cancelled loads */}
